@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shiftwise — Fair staff schedules</title>
+  <style>
+    :root {
+      --ink: #14231e;
+      --muted: #61736b;
+      --line: #dce6e1;
+      --paper: #f6f8f7;
+      --panel: #ffffff;
+      --mint: #c6f3d5;
+      --mint-deep: #198754;
+      --night: #182f5b;
+      --sun: #f7b949;
+      --danger: #d84c4c;
+      --shadow: 0 14px 35px rgba(28, 53, 43, .08);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; color: var(--ink); background: var(--paper); font: 14px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    .app { min-height: 100vh; display: grid; grid-template-columns: 252px minmax(0, 1fr); }
+    aside { background: #10281e; color: #eaf8f0; padding: 26px 16px; display: flex; flex-direction: column; gap: 28px; }
+    .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; font-size: 21px; font-weight: 800; letter-spacing: -.7px; }
+    .brand-mark { width: 30px; height: 30px; border-radius: 9px; background: var(--mint); color: #0e4c31; display: grid; place-items: center; font-size: 17px; }
+    nav { display: grid; gap: 5px; }
+    nav button { border: 0; border-radius: 9px; padding: 11px 12px; color: #b9d0c4; text-align: left; background: transparent; display: flex; align-items: center; gap: 10px; }
+    nav button:hover, nav button.active { color: #fff; background: rgba(198, 243, 213, .14); }
+    .aside-footer { margin-top: auto; padding: 14px 10px; border-top: 1px solid rgba(255,255,255,.12); color: #adc6b9; font-size: 12px; }
+    main { padding: 30px clamp(20px, 4vw, 58px) 54px; overflow: hidden; }
+    .topbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; margin-bottom: 28px; }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: clamp(25px, 3vw, 34px); line-height: 1.12; letter-spacing: -1.2px; }
+    h2 { font-size: 18px; letter-spacing: -.35px; }
+    h3 { font-size: 14px; }
+    .sub { color: var(--muted); margin-top: 6px; }
+    .actions, .inline-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+    .btn { border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink); padding: 9px 12px; font-weight: 700; }
+    .btn:hover { border-color: #adc9ba; background: #fbfefd; }
+    .btn.primary { color: #073b25; background: var(--mint); border-color: var(--mint); }
+    .btn.primary:hover { background: #aef0c4; }
+    .btn.danger { color: #a32e2e; border-color: #f2c5c5; }
+    .view { display: none; }
+    .view.active { display: block; }
+    .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 20px; }
+    .stat, .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 2px 0 rgba(20,35,30,.015); }
+    .stat { padding: 16px; }
+    .stat-label { color: var(--muted); font-weight: 650; font-size: 12px; }
+    .stat-value { margin-top: 4px; font-size: 25px; font-weight: 800; letter-spacing: -1px; }
+    .stat-note { margin-top: 3px; color: var(--muted); font-size: 12px; }
+    .card { padding: 20px; }
+    .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; margin-bottom: 16px; }
+    .schedule-card { padding: 0; overflow: hidden; }
+    .schedule-toolbar { padding: 18px 20px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 15px; }
+    .schedule-toolbar h2 span { color: var(--muted); font-weight: 600; }
+    .legend { display: flex; gap: 9px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+    .legend i { display: inline-block; width: 9px; height: 9px; margin-right: 4px; border-radius: 99px; }
+    .calendar-wrap { overflow-x: auto; }
+    .calendar { min-width: 850px; display: grid; grid-template-columns: 80px repeat(7, minmax(110px, 1fr)); }
+    .calendar > div { min-height: 136px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 9px; }
+    .calendar .weekhead { min-height: 38px; padding: 9px; text-transform: uppercase; font-size: 10px; font-weight: 800; color: var(--muted); letter-spacing: .7px; background: #fbfcfc; }
+    .calendar .weeknum { color: var(--muted); background: #fbfcfc; font-size: 11px; font-weight: 700; }
+    .calendar .day { background: #fff; }
+    .calendar .weekend { background: #fcfdfd; }
+    .calendar .out-month { background: #f8faf9; opacity: .45; }
+    .date { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; font-size: 12px; font-weight: 800; }
+    .date small { color: var(--muted); font-weight: 650; }
+    .shift-chip { width: 100%; display: flex; gap: 5px; align-items: center; padding: 3px 4px; margin: 3px 0; border: 0; border-left: 3px solid; border-radius: 4px; background: #f5f7f6; color: var(--ink); text-align: left; white-space: nowrap; overflow: hidden; font-size: 10px; }
+    .shift-chip:hover { filter: brightness(.97); }
+    .shift-chip .time { width: 22px; color: var(--muted); font-weight: 800; }
+    .shift-chip .worker { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; font-weight: 750; }
+    .shift-24 { flex: 0 0 auto; padding: 1px 3px; border-radius: 3px; background: #176940; color: #fff; font-size: 8px; font-weight: 900; letter-spacing: .15px; }
+    .s-8d { border-color: #f2a93b; background: #fff8e8; }
+    .s-8n { border-color: #627bbf; background: #f0f4ff; }
+    .s-12d { border-color: #32a46b; background: #edfbf2; }
+    .s-12n { border-color: #273f79; background: #eff2fb; }
+    .s-manager { border-color: #9a58c5; background: #f7effd; }
+    .s-custom { border-color: #4b8fa6; background: #eef8fb; }
+    .unfilled { border-left-color: var(--danger) !important; color: #a63838 !important; background: #fff2f2 !important; }
+    .two-col { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(290px, .7fr); gap: 18px; margin-top: 20px; }
+    .coverage { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
+    .coverage-item { padding: 12px; background: #f7faf8; border-radius: 10px; }
+    .coverage-item b { display: block; font-size: 17px; margin-top: 2px; }
+    .coverage-item span { color: var(--muted); font-size: 12px; }
+    .worker-summary { display: grid; gap: 10px; }
+    .worker-summary-row { display: grid; grid-template-columns: minmax(95px, 1fr) 1.8fr 63px; align-items: center; gap: 10px; font-size: 12px; }
+    .worker-summary-row .name { font-weight: 750; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bar { height: 8px; overflow: hidden; border-radius: 99px; background: #e8efeb; }
+    .bar > i { display: block; height: 100%; border-radius: inherit; background: var(--mint-deep); }
+    .worker-summary-row .hours { text-align: right; color: var(--muted); font-weight: 700; }
+    .notice { padding: 11px 13px; border-radius: 9px; background: #edf9f1; color: #195d37; font-size: 13px; }
+    .notice.warn { background: #fff6e7; color: #8b5e09; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th { padding: 10px 12px; color: var(--muted); border-bottom: 1px solid var(--line); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+    td { padding: 12px; border-bottom: 1px solid #edf1ef; vertical-align: middle; }
+    tr:last-child td { border-bottom: 0; }
+    .avatar { width: 29px; height: 29px; display: inline-grid; place-items: center; margin-right: 9px; border-radius: 50%; background: #dff5e7; color: #15623a; font-weight: 800; font-size: 11px; vertical-align: middle; }
+    .pill { display: inline-block; padding: 4px 7px; border-radius: 99px; background: #edf4f0; color: #406056; font-size: 11px; font-weight: 750; }
+    .pill.day { background: #fff4d9; color: #8a5a09; }
+    .pill.night { background: #e9effd; color: #2f4c92; }
+    .pill.dual { background: #e5f8eb; color: #1d7645; }
+    .progress-line { display: flex; align-items: center; gap: 8px; min-width: 130px; }
+    .progress-line .bar { flex: 1; }
+    .progress-line small { color: var(--muted); white-space: nowrap; }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .form-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    label { display: grid; gap: 6px; color: #40554b; font-size: 12px; font-weight: 750; }
+    input, select { width: 100%; min-height: 38px; padding: 8px 10px; border: 1px solid #cfdcd6; border-radius: 8px; color: var(--ink); background: white; outline: none; }
+    input:focus, select:focus { border-color: #4bb67c; box-shadow: 0 0 0 3px rgba(75,182,124,.13); }
+    .check { display: flex; align-items: center; gap: 8px; margin-top: 4px; color: #40554b; font-weight: 700; }
+    .check[hidden] { display: none; }
+    .check input { width: 16px; min-height: auto; height: 16px; accent-color: #198754; }
+    .category-grid { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 7px; }
+    .category-choice { display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid #d7e4dd; border-radius: 7px; color: #40554b; font-size: 12px; font-weight: 700; }
+    .category-choice input { width: 14px; min-height: 14px; height: 14px; margin: 0; accent-color: #198754; }
+    .category-tag { display: inline-block; margin: 2px 3px 2px 0; padding: 3px 6px; border-radius: 5px; background: #edf4f0; color: #406056; font-size: 10px; font-weight: 750; }
+    .weekday-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+    .weekday-picker label { display: flex; align-items: center; gap: 4px; padding: 5px 6px; border: 1px solid #d7e4dd; border-radius: 6px; color: #40554b; font-size: 11px; }
+    .weekday-picker input { width: 13px; min-height: 13px; height: 13px; margin: 0; accent-color: #198754; }
+    .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+    .settings-stack { display: grid; gap: 18px; max-width: 760px; }
+    .rules { display: grid; gap: 0; }
+    .rule { display: flex; gap: 12px; padding: 13px 0; border-bottom: 1px solid #edf1ef; }
+    .rule:last-child { border-bottom: 0; }
+    .rule .number { width: 27px; height: 27px; flex: 0 0 auto; border-radius: 50%; display: grid; place-items: center; background: #e5f8eb; color: #176940; font-weight: 800; font-size: 12px; }
+    .rule p { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    dialog { width: min(610px, calc(100% - 28px)); padding: 0; border: 0; border-radius: 15px; box-shadow: var(--shadow); color: var(--ink); }
+    dialog::backdrop { background: rgba(8, 28, 19, .44); }
+    .modal-head { display: flex; justify-content: space-between; align-items: center; padding: 19px 21px; border-bottom: 1px solid var(--line); }
+    .modal-body { padding: 21px; }
+    .icon-btn { width: 29px; height: 29px; border: 0; border-radius: 6px; background: #f0f3f1; color: var(--muted); font-size: 19px; line-height: 1; }
+    .availability-list { display: grid; gap: 9px; margin-top: 15px; }
+    .availability-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 1px solid #e0e8e3; border-radius: 8px; font-size: 12px; }
+    .availability-item b { min-width: 94px; }
+    .availability-item span { color: var(--muted); }
+    .availability-item button { margin-left: auto; border: 0; color: var(--danger); background: transparent; font-weight: 800; }
+    .availability-launch { margin-right: auto; }
+    .mini-calendar-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 13px; }
+    .mini-calendar-controls strong { font-size: 15px; letter-spacing: -.2px; }
+    .mini-calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+    .mini-calendar .mini-weekday { padding: 2px 0 5px; color: var(--muted); text-align: center; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+    .mini-day { min-height: 42px; padding: 5px; border: 1px solid #deebe4; border-radius: 8px; background: #fff; color: var(--ink); text-align: right; font-size: 12px; font-weight: 800; }
+    .mini-day:hover { border-color: #7dc89d; transform: translateY(-1px); }
+    .mini-day.empty { visibility: hidden; }
+    .mini-day.state-neutral { border-color: #deebe4; background: #fff; color: #53675d; }
+    .mini-day.state-all { border-color: #eab8b8; background: #fff0f0; color: #a33333; }
+    .mini-day.state-night { border-color: #b7c7ec; background: #edf2ff; color: #365396; }
+    .mini-day.state-day { border-color: #efd790; background: #fff8e4; color: #93680b; }
+    .mini-day.state-available { border-color: #b7e1c5; background: #effbf3; color: #26724a; }
+    .availability-palette { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-top: 18px; }
+    .palette-option { min-height: 51px; padding: 7px 5px; border: 2px solid transparent; border-radius: 9px; background: #f5f7f6; color: #40554b; text-align: center; font-size: 11px; font-weight: 800; }
+    .palette-option:hover, .palette-option.active { border-color: currentColor; }
+    .palette-option.all { background: #fff0f0; color: #a33333; }
+    .palette-option.night { background: #edf2ff; color: #365396; }
+    .palette-option.day { background: #fff8e4; color: #93680b; }
+    .palette-option.available { background: #effbf3; color: #26724a; }
+    .availability-status { display: flex; align-items: center; gap: 8px; margin: 13px 0 4px; color: #40554b; font-size: 12px; font-weight: 750; }
+    .availability-status b { padding: 3px 7px; border-radius: 5px; background: #edf4f0; color: #176940; }
+    .availability-tools { display: flex; flex-wrap: wrap; gap: 7px; margin: 13px 0 4px; }
+    .availability-tools .btn { padding: 6px 8px; font-size: 11px; }
+    .form-section { margin-top: 16px; padding-top: 15px; border-top: 1px solid #edf1ef; }
+    .form-section h3 { margin-bottom: 4px; }
+    .form-section .sub { margin-top: 0; }
+    .modal-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 18px; }
+    .modal-footer .right { display: flex; gap: 8px; }
+    .shift-duration { margin-top: 8px; color: #406056; font-size: 12px; font-weight: 750; }
+    .weekday-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 7px 0; }
+    .weekday-actions button { border: 1px solid #d7e4dd; border-radius: 6px; padding: 5px 7px; background: #fff; color: #40554b; font-size: 11px; font-weight: 750; }
+    .readiness { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; margin: -8px 0 20px; padding: 12px 14px; border: 1px solid #d7e7dd; border-radius: 11px; background: #f2faf5; }
+    .readiness.warn { border-color: #f0d3a1; background: #fff9ed; }
+    .readiness b { display: block; }
+    .readiness p { color: var(--muted); margin-top: 2px; font-size: 12px; }
+    .readiness .pill { white-space: nowrap; }
+    .status-draft { background:#fff4d9; color:#8a5a09; }
+    .status-published { background:#e5f8eb; color:#1d7645; }
+    .status-archived { background:#edf1ef; color:#61736b; }
+    .schedule-controls { display:flex; flex-wrap:wrap; align-items:end; gap:9px; padding:12px 20px; border-bottom:1px solid var(--line); background:#fbfcfc; }
+    .schedule-controls label { min-width:125px; }
+    .schedule-controls select { min-height:34px; padding:6px 8px; }
+    .shift-chip.locked::after { content:'🔒'; font-size:8px; }
+    .shift-chip.selected { outline:2px solid #198754; outline-offset:1px; }
+    .conflict { padding:10px 12px; margin-top:12px; border-radius:8px; background:#fff1f1; color:#a32e2e; font-size:12px; }
+    .reason-box { padding:10px 12px; margin-top:12px; border-radius:8px; background:#f2f7f4; color:#40554b; font-size:12px; }
+    .unfilled-panel { margin-top:18px; }
+    .unfilled-list { display:grid; gap:7px; max-height:260px; overflow:auto; }
+    .unfilled-row { display:grid; grid-template-columns:auto 100px 1fr auto; align-items:center; gap:9px; padding:8px 10px; border:1px solid #e1e9e5; border-radius:8px; }
+    .unfilled-row input { width:15px; min-height:15px; height:15px; }
+    .version-row { display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center; padding:10px 0; border-bottom:1px solid #edf1ef; }
+    .version-row:last-child { border-bottom:0; }
+    .version-actions { display:flex; flex-wrap:wrap; gap:6px; }
+    .report-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin-bottom:18px; }
+    .report-metric { padding:16px; border:1px solid var(--line); border-radius:12px; background:#fff; }
+    .report-metric b { display:block; margin-top:4px; font-size:23px; }
+    .positive { color:#1d7645; }
+    .negative { color:#a32e2e; }
+    .pairing-preview { font-size:12px; color:var(--muted); margin-top:8px; }
+    .empty { padding: 32px 18px; color: var(--muted); text-align: center; }
+    #sheetDropZone.drag { border-color: #1d7645; box-shadow: 0 0 0 3px rgba(29,118,69,.12); }
+    #sheetImportStats { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 4px; }
+    #sheetImportStats .stat { padding: 12px; }
+    #sheetImportStats .stat-value { font-size: 22px; }
+    .issue-row { padding: 7px 0; border-bottom: 1px solid #edf1ef; font-size: 13px; color: #40554b; }
+    .issue-row:last-child { border-bottom: 0; }
+    .issue-row.error { color: #a32e2e; font-weight: 700; }
+    .issue-row span { color: var(--muted); margin-right: 6px; }
+    .mobile-nav { display: none; }
+    @media (max-width: 900px) { .stats { grid-template-columns: repeat(2, 1fr); } .two-col { grid-template-columns: 1fr; } }
+    @media (max-width: 700px) { .app { display: block; } aside { display: none; } main { padding: 22px 15px 86px; } .topbar { display: block; } .actions { margin-top: 16px; } .form-grid, .form-grid.three, .report-grid { grid-template-columns: 1fr; } .mobile-nav { position: fixed; z-index: 5; display: grid; grid-template-columns: repeat(6, 1fr); left: 0; right: 0; bottom: 0; padding: 7px; background: #10281e; box-shadow: 0 -4px 18px rgba(12,37,25,.2); } .mobile-nav button { border: 0; padding: 8px 2px; color: #b9d0c4; background: transparent; font-size: 9px; } .mobile-nav button.active { color: #fff; } }
+    @media print { body { background: #fff; } aside, .actions, .schedule-toolbar .legend, .mobile-nav, .no-print { display: none !important; } .app { display: block; } main { padding: 0; } .view:not(.active) { display: none !important; } .card, .stat { box-shadow: none; } .schedule-card { border-color: #bbb; } }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <div class="brand"><span class="brand-mark">✦</span> Shiftwise</div>
+      <nav id="sideNav">
+        <button class="active" data-view="schedule">▦&nbsp; Schedule</button>
+        <button data-view="workers">◉&nbsp; Workers</button>
+        <button data-view="shifts">◷&nbsp; Shifts</button>
+        <button data-view="availability">◫&nbsp; Availability</button>
+        <button data-view="reports">▤&nbsp; Reports</button>
+        <button data-view="settings">⚙&nbsp; Settings</button>
+      </nav>
+      <div class="aside-footer">Manager workspace<br><b id="monthAside">July 2026</b></div>
+    </aside>
+    <main>
+      <section class="view active" id="scheduleView">
+        <div class="topbar">
+          <div><h1>Monthly schedule</h1><p class="sub" id="scheduleSubtitle">A fair plan for your team.</p></div>
+          <div class="actions no-print">
+            <button class="btn" id="previousMonth">←</button><button class="btn" id="monthPicker">July 2026 ▾</button><button class="btn" id="nextMonth">→</button>
+            <span class="pill status-draft" id="scheduleStatus">Draft</span><button class="btn" id="undoSchedule" title="Undo last schedule change">↶</button><button class="btn" id="redoSchedule" title="Redo schedule change">↷</button><button class="btn" id="scheduleVersions">Versions</button><button class="btn" id="publishSchedule">Publish</button><button class="btn" id="archiveSchedule">Archive</button>
+            <button class="btn" id="printSchedule">Print / PDF</button><button class="btn" id="exportCsv">Export CSV</button>
+            <button class="btn primary" id="generateSchedule">✦ Generate schedule</button>
+          </div>
+        </div>
+        <div class="readiness" id="scheduleReadiness"></div>
+        <div class="stats" id="stats"></div>
+        <div class="card schedule-card">
+          <div class="schedule-toolbar"><h2 id="calendarTitle">July <span>2026</span></h2><div class="legend"><span><i style="background:#f2a93b"></i>8h day</span><span><i style="background:#627bbf"></i>8h night</span><span><i style="background:#32a46b"></i>12h day</span><span><i style="background:#273f79"></i>12h night</span><span><i style="background:#9a58c5"></i>Manager</span></div></div>
+          <div class="schedule-controls no-print"><label>View<select id="scheduleViewMode"><option value="month">Month</option><option value="week">Week</option><option value="worker">Per worker</option></select></label><label id="weekDateLabel" hidden>Week containing<input id="scheduleWeekDate" type="date" /></label><label>Worker<select id="scheduleWorkerFilter"></select></label><label>Category<select id="scheduleCategoryFilter"></select></label><label>Shift<select id="scheduleShiftFilter"></select></label><label>Availability<select id="scheduleAvailabilityFilter"><option value="">All</option><option value="available">Available assignment</option><option value="violation">Availability violation</option></select></label><label class="check"><input type="checkbox" id="scheduleUnfilledOnly" />Unfilled only</label><button class="btn" id="clearScheduleFilters">Clear filters</button></div>
+          <div class="calendar-wrap"><div class="calendar" id="calendar"></div></div>
+        </div>
+        <div class="card unfilled-panel no-print"><div class="card-head"><div><h2>Unfilled and bulk assignment</h2><p class="sub">Select open shifts below, or Ctrl/⌘-click any calendar shifts to select them for reassignment.</p></div><div class="inline-actions"><span class="pill" id="bulkCount">0 selected</span><select id="bulkWorker"></select><button class="btn primary" id="bulkAssign">Assign selected</button></div></div><div class="unfilled-list" id="unfilledList"></div></div>
+        <div class="two-col">
+          <div class="card"><div class="card-head"><div><h2>Coverage & balance</h2><p class="sub">The generator prioritizes availability, rest rules and hour targets.</p></div></div><div class="coverage" id="coverage"></div></div>
+          <div class="card"><div class="card-head"><div><h2>Hours by worker</h2><p class="sub">Target vs. scheduled</p></div><button class="btn no-print" data-view="workers">View all</button></div><div class="worker-summary" id="workerSummary"></div></div>
+        </div>
+      </section>
+
+      <section class="view" id="workersView">
+        <div class="topbar"><div><h1>Workers</h1><p class="sub">Set individual hour targets and shift preferences.</p></div><div class="actions"><button class="btn" id="downloadSheetTemplate">↓ Sheet template</button><button class="btn" id="openSheetImport">↑ Import from sheet</button><button class="btn primary" id="addWorker">+ Add worker</button></div></div>
+        <div class="card" id="sheetDropZone"><div class="card-head"><div><h2>Data from the team's Google Sheet</h2><p class="sub">Download the template, share it with the team, then import the filled-in file. Targets, preferences and unavailability are read from it.</p></div><span class="pill" id="sheetImportState">No import yet</span></div><div class="form-actions" style="justify-content:flex-start"><button class="btn" id="openSheetImport2">Choose file…</button><button class="btn danger" id="undoSheetImport" hidden>Undo last import</button></div><input type="file" id="sheetFile" accept=".xlsx,.xlsm,.xls,.csv" hidden /></div>
+        <div class="card table-wrap" style="margin-top:18px"><table><thead><tr><th>Worker</th><th>Target</th><th>Scheduled</th><th>Categories</th><th>Manager</th><th>Preference</th><th>24h arrangement</th><th></th></tr></thead><tbody id="workersTable"></tbody></table></div>
+      </section>
+
+      <section class="view" id="shiftsView">
+        <div class="topbar"><div><h1>Shifts and categories</h1><p class="sub">Create the work patterns and qualifications used by the scheduler.</p></div><div class="actions"><button class="btn" id="addCategory">+ Add category</button><button class="btn primary" id="addShift">+ Add shift</button></div></div>
+        <div class="card"><div class="card-head"><div><h2>Categories</h2><p class="sub">Workers can hold multiple categories; category eligibility is required for its shifts.</p></div></div><div id="categoryList" class="category-grid"></div></div>
+        <div class="card table-wrap" style="margin-top:18px"><div class="card-head"><div><h2>Shift templates</h2><p class="sub">The Manager shift is generated Monday–Friday, 08:00–16:00.</p></div></div><table><thead><tr><th>Shift</th><th>Time</th><th>Category</th><th>Coverage</th><th>Active days</th><th>24h pairing</th><th></th></tr></thead><tbody id="shiftsTable"></tbody></table></div>
+        <div class="card table-wrap" style="margin-top:18px"><div class="card-head"><div><h2>24-hour pairings</h2><p class="sub">Pair any two continuous shift templates into a reusable 24-hour duty.</p></div><button class="btn primary" id="addPairing">+ Add pairing</button></div><table><thead><tr><th>Name</th><th>First shift</th><th>Second shift</th><th>Offset</th><th>Validation</th><th></th></tr></thead><tbody id="pairingsTable"></tbody></table></div>
+      </section>
+
+      <section class="view" id="availabilityView">
+        <div class="topbar"><div><h1>Availability</h1><p class="sub">Record whole-day, day/morning, or night unavailability.</p></div><div class="actions"><button class="btn primary" id="addAvailability">+ Record unavailability</button></div></div>
+        <div class="card table-wrap"><table><thead><tr><th>Worker</th><th>Date</th><th>Unavailable</th><th></th></tr></thead><tbody id="availabilityTable"></tbody></table><div id="availabilityEmpty" class="empty" hidden>No unavailability has been added for this month.</div></div>
+      </section>
+
+      <section class="view" id="reportsView">
+        <div class="topbar"><div><h1>Operational reports</h1><p class="sub">Review payroll hours, difficult duties, manager cover, and compliance.</p></div><div class="actions"><button class="btn" id="exportWorkerReport">Worker report CSV</button><button class="btn" id="exportPayroll">Payroll Excel</button><button class="btn" id="exportIcs">Calendar ICS</button><button class="btn" id="printReports">Print / PDF</button></div></div>
+        <div class="report-grid" id="reportMetrics"></div>
+        <div class="card table-wrap"><div class="card-head"><div><h2>Worker operations</h2><p class="sub">Totals include custom shifts and manager duties.</p></div><label>Per-worker calendar<select id="reportWorker"></select></label></div><table><thead><tr><th>Worker</th><th>Scheduled</th><th>Target variance</th><th>Night</th><th>Weekend</th><th>24h</th><th>Manager replacements</th><th>Availability violations</th></tr></thead><tbody id="reportsTable"></tbody></table><div id="workerScheduleReport" style="margin-top:18px"></div></div>
+        <div class="card table-wrap" style="margin-top:18px"><div class="card-head"><div><h2>Category coverage</h2><p class="sub">Required and filled assignments by category.</p></div></div><table><thead><tr><th>Category</th><th>Required</th><th>Filled</th><th>Coverage</th></tr></thead><tbody id="categoryReport"></tbody></table></div>
+      </section>
+
+      <section class="view" id="settingsView">
+        <div class="topbar"><div><h1>Schedule settings</h1><p class="sub">Coverage requirements and fairness rules used by the generator.</p></div></div>
+        <div class="settings-stack">
+          <div class="card"><div class="card-head"><div><h2>Schedule basics</h2><p class="sub">Configure shift times, coverage, and active weekdays in the Shifts tab.</p></div></div><div class="form-grid"><label>Schedule month<input type="month" id="settingsMonth" /></label><label>Minimum rest between duties<input type="number" id="minimumRestHours" min="0" max="48" step="1" value="8" /></label><label>Recovery days after 24h duty<input type="number" id="recoveryDays" min="0" max="7" value="2" /></label></div><div class="notice" style="margin-top:14px">Rest is calculated from exact start/end timestamps, including overnight duties and adjacent-month assignments.</div><div class="form-actions"><button class="btn primary" id="saveSettings">Save settings</button></div></div>
+          <div class="card"><div class="card-head"><div><h2>How automatic scheduling works</h2><p class="sub">The plan is deliberately transparent, so its results stay easy to review.</p></div></div><div class="rules"><div class="rule"><span class="number">1</span><div><h3>Availability comes first</h3><p>Workers are never placed on a day, day/morning shift, or night shift they marked unavailable.</p></div></div><div class="rule"><span class="number">2</span><div><h3>24h shifts are optional and safe</h3><p>A 24h pair is used only if it improves the hour-target balance. When selected, the generator keeps the configured recovery days clear before another 24h shift.</p></div></div><div class="rule"><span class="number">3</span><div><h3>Minimise hour-target error</h3><p>The generator minimises the sum of squared differences between requested and scheduled hours. Shift preferences only break an equal-score tie.</p></div></div></div></div>
+          <div class="card"><div class="card-head"><div><h2>Data</h2><p class="sub">This prototype stores schedule data in this browser only.</p></div></div><button class="btn danger" id="resetData">Reset demo data</button></div>
+        </div>
+      </section>
+    </main>
+    <div class="mobile-nav" id="mobileNav"><button class="active" data-view="schedule">Schedule</button><button data-view="workers">Workers</button><button data-view="shifts">Shifts</button><button data-view="availability">Availability</button><button data-view="reports">Reports</button><button data-view="settings">Settings</button></div>
+  </div>
+
+  <dialog id="workerModal">
+    <div class="modal-head"><h2 id="workerModalTitle">Add worker</h2><button class="icon-btn" data-close="workerModal">×</button></div>
+    <form class="modal-body" id="workerForm">
+      <input type="hidden" id="workerId" />
+      <div class="form-grid"><label>Full name<input required id="workerName" maxlength="50" placeholder="e.g. Alex Morgan" /></label><label>Target monthly hours<input required id="workerTarget" type="number" min="0" max="400" step="4" placeholder="e.g. 160" /></label><label>Preferred shift<select id="workerPreference"><option value="either">No preference</option><option value="day">Day shifts</option><option value="night">Night shifts</option></select></label><label>24h shift preference<select id="worker24"><option value="none">Does not prefer 24h shifts</option><option value="day-night">Prefer 08:00 → 08:00</option><option value="night-day">Prefer 20:00 → 20:00</option><option value="either-24">Either 24h pattern</option></select></label></div><label style="margin-top:14px">Eligible categories<div class="category-grid" id="workerCategories"></div></label><div class="form-section"><h3>Manager role</h3><p class="sub">Only one worker can be the default manager.</p><label class="check"><input id="workerManagerQualified" type="checkbox" /><span>Manager-qualified (08:00–16:00 weekdays)</span></label><label class="check"><input id="workerDefaultManager" type="checkbox" /><span>Default manager — used before qualified replacements</span></label></div><div class="form-section"><h3>Availability</h3><p class="sub">Set whole-day, day, and night restrictions in a visual calendar.</p><button type="button" class="btn" id="manageWorkerAvailability" hidden>▦ Availability calendar</button></div>
+      <div class="modal-footer"><button type="button" class="btn danger" id="deleteWorker" hidden>Delete worker</button><div class="right"><button type="button" class="btn" data-close="workerModal">Cancel</button><button class="btn primary" type="submit">Save worker</button></div></div>
+    </form>
+  </dialog>
+
+  <dialog id="shiftModal">
+    <div class="modal-head"><h2 id="shiftModalTitle">Add shift</h2><button class="icon-btn" data-close="shiftModal">×</button></div>
+    <form class="modal-body" id="shiftForm"><input type="hidden" id="shiftId" /><div class="form-grid"><label>Shift name<input required id="shiftName" maxlength="40" placeholder="e.g. Packing" /></label><label>Category<select id="shiftCategory"></select></label><label>Start<input required id="shiftStart" type="time" /></label><label>End<input required id="shiftEnd" type="time" /></label><label>Workers required<input required id="shiftCoverage" type="number" min="1" max="20" value="1" /></label><label>Availability restriction<select id="shiftPeriod"><option value="day">Blocked by day / morning unavailability</option><option value="night">Blocked by night unavailability</option></select></label></div><div class="shift-duration" id="shiftDuration"></div><label style="margin-top:14px">Active weekdays<div class="weekday-actions"><button type="button" data-shift-days="all">Every day</button><button type="button" data-shift-days="weekdays">Weekdays</button><button type="button" data-shift-days="weekend">Weekends</button><button type="button" data-shift-days="none">Clear</button></div><div class="weekday-picker" id="shiftDays"></div></label><div class="notice" style="margin-top:14px">To combine this shift into a continuous 24-hour duty, create or edit a pairing in the Shifts tab.</div><div class="modal-footer"><button type="button" class="btn danger" id="deleteShift" hidden>Delete shift</button><div class="right"><button type="button" class="btn" data-close="shiftModal">Cancel</button><button class="btn primary" type="submit">Save shift</button></div></div></form>
+  </dialog>
+
+  <dialog id="sheetImportModal">
+    <div class="modal-head"><h2>Import from sheet</h2><button class="icon-btn" data-close="sheetImportModal">×</button></div>
+    <div class="modal-body">
+      <p class="sub" id="sheetImportSource"></p>
+      <div class="stats" id="sheetImportStats"></div>
+      <div class="form-section"><h3>What to import</h3>
+        <label class="check"><input id="sheetOptionUpdate" type="checkbox" checked /><span>Update targets, preferences and manager roles for people already in the app</span></label>
+        <label class="check"><input id="sheetOptionAdd" type="checkbox" checked /><span>Add people who only exist in the sheet</span></label>
+        <label class="check"><input id="sheetOptionAvailability" type="checkbox" checked /><span id="sheetOptionAvailabilityLabel">Replace unavailability for the sheet's month</span></label>
+        <label class="check" id="sheetOptionMonthRow" hidden><input id="sheetOptionMonth" type="checkbox" checked /><span id="sheetOptionMonthLabel">Switch the app to that month</span></label>
+      </div>
+      <div class="form-section"><h3>Workers</h3><div class="table-wrap"><table><thead><tr><th>Name</th><th>Status</th><th>Changes</th></tr></thead><tbody id="sheetImportWorkers"></tbody></table></div></div>
+      <div class="form-section"><h3>Unavailability</h3><div class="table-wrap"><table><thead><tr><th>Name</th><th>Days</th><th>Detail</th></tr></thead><tbody id="sheetImportAvailability"></tbody></table></div></div>
+      <div class="form-section" id="sheetImportIssuesSection"><h3>Warnings</h3><div id="sheetImportIssues"></div></div>
+      <div class="modal-footer"><div class="right"><button type="button" class="btn" data-close="sheetImportModal">Cancel</button><button class="btn primary" id="applySheetImport">Apply import</button></div></div>
+    </div>
+  </dialog>
+
+  <dialog id="availabilityModal">
+    <div class="modal-head"><h2>Record unavailability</h2><button class="icon-btn" data-close="availabilityModal">×</button></div>
+    <form class="modal-body" id="availabilityForm"><div class="form-grid"><label>Worker<select required id="availabilityWorker"></select></label><label>Date<input required id="availabilityDate" type="date" /></label><label>Unavailable period<select id="availabilityPeriod"><option value="all">Whole day</option><option value="day">Day / morning</option><option value="night">Night</option></select></label></div><div class="form-actions"><button type="button" class="btn" data-close="availabilityModal">Cancel</button><button class="btn primary" type="submit">Save unavailability</button></div></form>
+  </dialog>
+
+  <dialog id="workerAvailabilityModal">
+    <div class="modal-head"><div><h2 id="availabilityCalendarTitle">Availability calendar</h2><p class="sub" id="availabilityCalendarWorker"></p></div><button class="icon-btn" data-close="workerAvailabilityModal">×</button></div>
+    <div class="modal-body">
+      <div class="mini-calendar-controls"><button class="btn" id="availabilityPreviousMonth">←</button><strong id="availabilityCalendarMonth"></strong><button class="btn" id="availabilityNextMonth">→</button></div>
+      <div class="mini-calendar" id="workerAvailabilityCalendar"></div>
+      <div class="availability-status">Painting: <b id="availabilityPaintState">Whole day unavailable</b><span>Changes save immediately.</span></div>
+      <div class="availability-tools"><button class="btn" type="button" id="availabilityWeekdays">Apply to Mon–Fri</button><button class="btn" type="button" id="availabilityClearMonth">Clear this month</button><button class="btn" type="button" id="availabilityCopyPrevious">Copy previous month</button></div>
+      <p class="sub" style="margin-top:10px">Choose a state below, then click or drag across relevant dates. Available clears a restriction.</p>
+      <div class="availability-palette" id="availabilityPalette">
+        <button class="palette-option all active" data-period="all">Whole day</button>
+        <button class="palette-option night" data-period="night">Night</button>
+        <button class="palette-option day" data-period="day">Morning / day</button>
+        <button class="palette-option available" data-period="available">Available</button>
+      </div>
+      <div class="form-actions"><button class="btn primary" data-close="workerAvailabilityModal">Done</button></div>
+    </div>
+  </dialog>
+
+  <dialog id="assignmentModal">
+    <div class="modal-head"><h2>Shift assignment</h2><button class="icon-btn" data-close="assignmentModal">×</button></div>
+    <form class="modal-body" id="assignmentForm"><input type="hidden" id="assignmentKey" /><div class="form-grid"><label>Date<input disabled id="assignmentDate" /></label><label>Shift<input disabled id="assignmentShift" /></label><label>Assign worker<select id="assignmentWorker"></select></label><label class="check"><input type="checkbox" id="assignmentLocked" />Lock this assignment during regeneration</label></div><div class="reason-box" id="assignmentReason"></div><div class="conflict" id="assignmentConflict" hidden></div><p class="sub" style="margin-top:15px">Manual edits create a new draft revision and can be undone.</p><div class="form-actions"><button type="button" class="btn" data-close="assignmentModal">Cancel</button><button class="btn primary" type="submit">Save assignment</button></div></form>
+  </dialog>
+
+  <dialog id="pairingModal">
+    <div class="modal-head"><h2 id="pairingModalTitle">Add 24h pairing</h2><button class="icon-btn" data-close="pairingModal">×</button></div>
+    <form class="modal-body" id="pairingForm"><input type="hidden" id="pairingId" /><div class="form-grid"><label>Name<input id="pairingName" required placeholder="e.g. 06:00 → 06:00" /></label><label>First shift<select id="pairingFirst"></select></label><label>Second shift<select id="pairingSecond"></select></label><label>Second shift day offset<select id="pairingOffset"><option value="0">Same calendar day</option><option value="1">Following calendar day</option></select></label></div><div class="pairing-preview" id="pairingPreview"></div><div class="modal-footer"><button type="button" class="btn danger" id="deletePairing" hidden>Delete pairing</button><div class="right"><button type="button" class="btn" data-close="pairingModal">Cancel</button><button class="btn primary" type="submit">Save pairing</button></div></div></form>
+  </dialog>
+
+  <dialog id="versionsModal">
+    <div class="modal-head"><div><h2>Schedule versions</h2><p class="sub" id="versionsSubtitle"></p></div><button class="icon-btn" data-close="versionsModal">×</button></div>
+    <div class="modal-body"><div id="versionsList"></div><div class="notice" id="versionComparison" hidden></div><div class="form-actions"><button class="btn" data-close="versionsModal">Done</button></div></div>
+  </dialog>
+
+  <script src="./node_modules/javascript-lp-solver/src/solver.js"></script>
+  <script>if(location.protocol==='file:')document.write('<script src="./highs-wasm.js"></'+'script>');</script>
+  <script src="./node_modules/highs/build/highs.js"></script>
+  <script src="./node_modules/xlsx/dist/xlsx.full.min.js"></script>
+  <script src="./dist/scheduler-engine.js"></script>
+  <script src="./dist/sheet-io.js"></script>
+  <script src="./dist/app.js"></script>
+</body>
+</html>
