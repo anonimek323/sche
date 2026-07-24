@@ -7,7 +7,7 @@
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     return bytes;
   }
-  var highsOptions = { locateFile: (file) => "./node_modules/highs/build/" + file, print: () => {
+  var highsOptions = { locateFile: (file) => "./vendor/" + file, print: () => {
   }, printErr: () => {
   } };
   if (window.HIGHS_WASM_BASE64) highsOptions.wasmBinary = decodeWasmBase64(window.HIGHS_WASM_BASE64);

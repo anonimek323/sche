@@ -4,6 +4,7 @@
     "build:engine": "esbuild src/scheduler-engine.ts --bundle --format=cjs --platform=node --outfile=scheduler-engine.js && esbuild src/scheduler-engine.ts --bundle --format=iife --global-name=ShiftwiseEngine --platform=browser --outfile=dist/scheduler-engine.js",
     "build:sheet-io": "esbuild src/sheet-io.ts --bundle --format=cjs --platform=node --outfile=sheet-io.js && esbuild src/sheet-io.ts --bundle --format=iife --global-name=ShiftwiseSheetIO --platform=browser --outfile=dist/sheet-io.js",
     "sheet-template": "python3 scripts/make-sheet-template.py",
+    "vendor": "node scripts/copy-vendor.js",
     "build:app": "esbuild src/app.ts --bundle --format=iife --platform=browser --outfile=dist/app.js",
     "build:wasm-embed": "node scripts/embed-highs-wasm.js",
     "typecheck": "tsc --noEmit",

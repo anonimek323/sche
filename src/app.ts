@@ -4,7 +4,7 @@ const eventElement = (event: Event): HTMLElement => event.target as HTMLElement;
 
 const STORAGE = 'shiftwise-v1';
 function decodeWasmBase64(value: string): Uint8Array {const binary=atob(value),bytes=new Uint8Array(binary.length);for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);return bytes;}
-const highsOptions: Record<string, any>={locateFile:(file: string)=>'./node_modules/highs/build/'+file,print:()=>{},printErr:()=>{}};
+const highsOptions: Record<string, any>={locateFile:(file: string)=>'./vendor/'+file,print:()=>{},printErr:()=>{}};
 if(window.HIGHS_WASM_BASE64)highsOptions.wasmBinary=decodeWasmBase64(window.HIGHS_WASM_BASE64);
 const highsReady = window.Module(highsOptions);
 const shiftMeta: Record<string, Shift> = {
