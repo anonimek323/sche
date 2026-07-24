@@ -43,13 +43,27 @@ Column order does not matter and extra columns are ignored — the importer matc
 Polish or English, and matches people by name ignoring case, diacritics and word order. A single-tab
 `.csv` export works too.
 
-`templates/` holds a blank workbook and a filled-in example with dropdowns, colour coding and weekend
-shading. Regenerate them for another month with:
+`templates/` holds a blank workbook and a filled-in example with dropdowns, colour coding, weekend
+shading and a running `Razem` count per person. Regenerate them for another month with:
 
 ```sh
 python3 scripts/make-sheet-template.py --month 2026-09          # blank
 python3 scripts/make-sheet-template.py --month 2026-09 --sample # filled-in example
 ```
+
+### Building the sheet natively instead of importing a file
+
+There is no such thing as an offline Google Sheets file — a Google Sheet is a cloud document, and
+`.gsheet` files are only pointers to one. Uploading the `.xlsx` above and letting Drive convert it is
+the usual route, but `scripts/grafik-arkusz.gs` builds the same layout *inside* Google Sheets instead,
+using Google's own validation and conditional formatting, with no conversion step:
+
+1. In a new Google Sheet: Extensions → Apps Script
+2. Paste the contents of `scripts/grafik-arkusz.gs`, save, and reload the spreadsheet
+3. A **Grafik** menu appears: *Utwórz arkusz na miesiąc…* builds both tabs for a month you type in
+
+The same menu has *Wyczyść dostępność i ustaw nowy miesiąc…*, which rebuilds the `Dostępność` grid for
+the next month and carries the roster over, so one spreadsheet serves the whole year.
 
 The layout lives in two places that must stay in step: `scripts/make-sheet-template.py` writes it and
 `src/sheet-io.ts` reads it. `tests/sheet-io.test.js` parses the generated example to keep them honest.
