@@ -78,6 +78,7 @@ function utworzArkusze() {
   budujInstrukcje(freshSheet(spreadsheet, 'Instrukcja', 0), month);
   var workers = budujPracownikow(freshSheet(spreadsheet, 'Pracownicy', 1), month);
   budujDostepnosc(freshSheet(spreadsheet, 'Dostępność', 2), month, workers);
+  removeEmptyDefaultSheet(spreadsheet);
   spreadsheet.setActiveSheet(spreadsheet.getSheetByName('Instrukcja'));
   SpreadsheetApp.getUi().alert('Gotowe', 'Arkusz na ' + nazwaMiesiaca(month) + ' jest gotowy. Wyślij link zespołowi.', SpreadsheetApp.getUi().ButtonSet.OK);
 }
@@ -104,6 +105,33 @@ function freshSheet(spreadsheet, name, position) {
   return sheet;
 }
 
+/**
+ * insertSheet() daje arkusz 26 kolumn × 1000 wierszy, a siatka dostępności
+ * potrzebuje 33 kolumn. Bez tego getRange() na kolumnie 27 zgłasza błąd
+ * „zakres poza arkuszem” i budowanie przerywa się w połowie.
+ */
+function ensureSize(sheet, rows, columns) {
+  var maxColumns = sheet.getMaxColumns();
+  if (maxColumns < columns) sheet.insertColumnsAfter(maxColumns, columns - maxColumns);
+  else if (maxColumns > columns) sheet.deleteColumns(columns + 1, maxColumns - columns);
+  var maxRows = sheet.getMaxRows();
+  if (maxRows < rows) sheet.insertRowsAfter(maxRows, rows - maxRows);
+  else if (maxRows > rows) sheet.deleteRows(rows + 1, maxRows - rows);
+}
+
+// Świeży arkusz Google ma jedną pustą zakładkę o nazwie zależnej od języka.
+var DEFAULT_SHEET_NAMES = ['Sheet1', 'Sheet 1', 'Arkusz1', 'Arkusz 1', 'Feuille 1', 'Feuille1',
+                           'Hoja 1', 'Hoja1', 'Tabelle1', 'Foglio1', 'Blad1', 'Лист1'];
+
+function removeEmptyDefaultSheet(spreadsheet) {
+  if (spreadsheet.getSheets().length < 2) return;
+  spreadsheet.getSheets().forEach(function (sheet) {
+    if (DEFAULT_SHEET_NAMES.indexOf(sheet.getName()) >= 0 && sheet.getLastRow() === 0 && spreadsheet.getSheets().length > 1) {
+      spreadsheet.deleteSheet(sheet);
+    }
+  });
+}
+
 function nazwaMiesiaca(month) {
   var parts = month.split('-');
   return MONTHS_PL[Number(parts[1]) - 1] + ' ' + parts[0];
@@ -111,8 +139,6 @@ function nazwaMiesiaca(month) {
 
 function budujInstrukcje(sheet, month) {
   sheet.setTabColor(ACCENT);
-  sheet.setColumnWidth(1, 40);
-  sheet.setColumnWidth(2, 720);
 
   var rows = [
     ['', 'Grafik — dane od pracowników', 'title'],
@@ -141,6 +167,9 @@ function budujInstrukcje(sheet, month) {
   rows.push(['', 'Gdy zespół skończy: Plik → Pobierz → Microsoft Excel (.xlsx), a następnie w programie Shiftwise ' +
                  'zakładka Workers → Import from sheet. Przed zapisem zobaczysz podgląd wszystkich zmian.', 'body']);
 
+  ensureSize(sheet, rows.length + 2, 2);
+  sheet.setColumnWidth(1, 40);
+  sheet.setColumnWidth(2, 720);
   sheet.getRange(1, 1, rows.length, 2).setValues(rows.map(function (row) { return [row[0], row[1]]; }));
   rows.forEach(function (row, index) {
     var line = index + 1;
@@ -167,6 +196,7 @@ function budujInstrukcje(sheet, month) {
 function budujPracownikow(sheet, month) {
   sheet.setTabColor(INK);
   var last = WORKER_FIRST_ROW + DEFAULT_ROWS - 1;
+  ensureSize(sheet, last + 20, WORKER_COLUMNS.length);
 
   sheet.getRange(1, 1).setValue('Pracownicy').setFontSize(14).setFontWeight('bold').setFontColor(INK);
   sheet.getRange(2, 1).setValue('Jeden wiersz na osobę · ' + nazwaMiesiaca(month)).setFontSize(10).setFontColor(MUTED);
@@ -226,12 +256,14 @@ function budujDostepnosc(sheet, month, workers) {
   var lastDayColumn = days + 1;
   var totalColumn = days + 2;
   var last = AVAILABILITY_FIRST_ROW + DEFAULT_ROWS - 1;
+  ensureSize(sheet, last + 20, totalColumn);
 
   sheet.getRange(1, 1).setValue('Miesiąc').setFontWeight('bold').setFontColor(MUTED).setHorizontalAlignment('right');
-  sheet.getRange(1, 2).setValue(month).setFontWeight('bold').setFontColor(ACCENT).setBackground(MINT)
+  sheet.getRange(1, 2)
+       .setNumberFormat('@')  // najpierw tekst, inaczej Arkusze zrobią z tego datę
+       .setValue(month).setFontWeight('bold').setFontColor(ACCENT).setBackground(MINT)
        .setHorizontalAlignment('center')
-       .setBorder(true, true, true, true, false, false, LINE, SpreadsheetApp.BorderStyle.SOLID)
-       .setNumberFormat('@');  // tekst, żeby Arkusze nie zamieniły tego na datę
+       .setBorder(true, true, true, true, false, false, LINE, SpreadsheetApp.BorderStyle.SOLID);
   sheet.getRange(1, 4).setValue('Zaznacz tylko te dni, w których NIE możesz pracować — ' + nazwaMiesiaca(month))
        .setFontWeight('bold').setFontColor(INK);
 

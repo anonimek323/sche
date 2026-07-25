@@ -8,7 +8,7 @@
     "build:app": "esbuild src/app.ts --bundle --format=iife --platform=browser --outfile=dist/app.js",
     "build:wasm-embed": "node scripts/embed-highs-wasm.js",
     "typecheck": "tsc --noEmit",
-    "test": "pnpm run typecheck && pnpm run build && node tests/wasm-embed.test.js && node tests/scheduler-engine.test.js && node tests/sheet-io.test.js && node tests/full-month.test.js && node tests/app-dom.test.js"
+    "test": "pnpm run typecheck && pnpm run build && node tests/wasm-embed.test.js && node tests/scheduler-engine.test.js && node tests/sheet-io.test.js && node tests/apps-script.test.js && node tests/full-month.test.js && node tests/app-dom.test.js"
   },
   "dependencies": {
     "highs": "1.14.2",
