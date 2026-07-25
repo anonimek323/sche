@@ -1182,7 +1182,7 @@
     const tables = ShiftwiseSheetIO.buildTemplateTables(app, app.current), workbook = XLSX.utils.book_new();
     tables.forEach((table) => {
       const sheet = XLSX.utils.aoa_to_sheet(table.rows);
-      sheet["!cols"] = table.name === "Pracownicy" ? [{ wch: 30 }, { wch: 16 }, { wch: 18 }, { wch: 18 }, { wch: 24 }, { wch: 20 }, { wch: 18 }, { wch: 34 }] : table.name === "Dost\u0119pno\u015B\u0107" ? [{ wch: 30 }, ...Array.from({ length: 31 }, () => ({ wch: 4 }))] : [{ wch: 104 }];
+      sheet["!cols"] = table.name === "Pracownicy" ? [{ wch: 30 }, { wch: 16 }, { wch: 18 }, { wch: 18 }] : table.name === "Administrator" ? [{ wch: 30 }, { wch: 24 }, { wch: 20 }, { wch: 18 }, { wch: 34 }] : table.name === "Dost\u0119pno\u015B\u0107" ? [{ wch: 30 }, ...Array.from({ length: 31 }, () => ({ wch: 4 }))] : [{ wch: 104 }];
       XLSX.utils.book_append_sheet(workbook, sheet, table.name);
     });
     XLSX.writeFile(workbook, "grafik-dane-" + app.current + ".xlsx");

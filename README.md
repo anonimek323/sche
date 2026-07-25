@@ -27,12 +27,25 @@ Upload it to Google Drive, share it with the team, and let everyone fill in thei
 three tabs, all in Polish:
 
 - `Instrukcja` — what to fill in, and the legend
-- `Pracownicy` — one row per person: `Imię i nazwisko`, `Godziny docelowe`, `Preferowana pora`
-  (Dzień / Noc / Bez preferencji), `Dyżur 24h` (Nie / Dowolny / a pairing name), `Kategorie`,
-  `Uprawnienia kierownika`, `Kierownik domyślny`, `Uwagi`
+- `Pracownicy` — filled in by the team, one row per person: `Imię i nazwisko`, `Godziny docelowe`,
+  `Preferowana pora` (Dzień / Noc / Bez preferencji), `Dyżur 24h` (Nie / Dowolny / a pairing name)
 - `Dostępność` — a grid with one row per person and one column per day of the month. A cell holds
   `X` (unavailable all day), `D` (unavailable in the morning/day), `N` (unavailable at night), or nothing
   at all when the person is available. Cell `B1` holds the month as `YYYY-MM`
+- `Administrator` — the scheduler's own tab: `Imię i nazwisko`, `Kategorie`,
+  `Uprawnienia kierownika`, `Kierownik domyślny`, `Uwagi`. Who is qualified for what is not something
+  the team should be able to grant itself, so this tab is protected
+
+The two worker tabs are merged per person by name, so each person is imported once with the fields
+taken from both. Somebody left off the `Administrator` tab simply keeps whatever the app already holds.
+
+Protection differs by route, and only one of them is a real lock:
+
+- **Apps Script** — `Administrator` is protected with every other editor removed, so only the
+  spreadsheet's owner can edit it. The team sees it and is refused on edit. The header rows of the two
+  employee tabs are protected the same way, since renaming a header is what breaks the importer.
+- **`.xlsx`** — the sheet carries Excel's protection flag. That is a guardrail against fat fingers, not
+  a lock: in Excel it comes off in one click, and how Drive treats it on import is up to Drive.
 
 When the team is done: File → Download → Microsoft Excel (.xlsx), then Workers → **Import from sheet**
 (or drop the file on the card). Nothing is written until you confirm the preview, which lists every change,

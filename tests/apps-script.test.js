@@ -16,6 +16,16 @@ function chainable(target, methods) {
   return target;
 }
 
+function makeProtection(target, label) {
+  const protection = { target: label, editorsRemoved: false, domainEdit: true, description: '' };
+  protection.setDescription = text => { protection.description = text; return protection; };
+  protection.getEditors = () => ['someone@example.com'];
+  protection.removeEditors = () => { protection.editorsRemoved = true; return protection; };
+  protection.canDomainEdit = () => protection.domainEdit;
+  protection.setDomainEdit = value => { protection.domainEdit = value; return protection; };
+  return protection;
+}
+
 function makeSheet(name) {
   const cells = new Map();
   const sheet = {
@@ -27,6 +37,8 @@ function makeSheet(name) {
     frozenColumns: 0,
     validations: [],
     conditionalRules: [],
+    protections: [],
+    rangeProtections: [],
     notes: new Map(),
     numberFormats: new Map(),
     getName: () => name,
@@ -46,6 +58,7 @@ function makeSheet(name) {
     setFrozenRows: rows => { sheet.frozenRows = rows; return sheet; },
     setFrozenColumns: columns => { sheet.frozenColumns = columns; return sheet; },
     setConditionalFormatRules: rules => { sheet.conditionalRules = rules; return sheet; },
+    protect: () => { const protection = makeProtection(sheet, 'sheet'); sheet.protections.push(protection); return protection; },
     cellValue: (row, column) => cells.get(row + ':' + column),
     getRange(row, column, numRows, numColumns) {
       numRows = numRows === undefined ? 1 : numRows;
@@ -72,7 +85,14 @@ function makeSheet(name) {
           Array.from({ length: numColumns }, (_, columnOffset) => cells.get((row + rowOffset) + ':' + (column + columnOffset)) ?? '')),
         setNote(note) { sheet.notes.set(row + ':' + column, note); return range; },
         setNumberFormat(format) { sheet.numberFormats.set(row + ':' + column, format); return range; },
-        setDataValidation(validation) { sheet.validations.push({ row, column, numRows, numColumns, validation }); return range; }
+        setDataValidation(validation) { sheet.validations.push({ row, column, numRows, numColumns, validation }); return range; },
+        protect() {
+          const protection = makeProtection(range, 'range');
+          protection.rows = numRows;
+          protection.columns = numColumns;
+          sheet.rangeProtections.push(protection);
+          return protection;
+        }
       };
       return chainable(range, ['setBackground', 'setFontColor', 'setFontWeight', 'setFontSize', 'setFontStyle',
         'setHorizontalAlignment', 'setVerticalAlignment', 'setWrap', 'setBorder', 'merge', 'setFontLine']);
@@ -131,7 +151,7 @@ const SpreadsheetApp = {
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'grafik-arkusz.gs'), 'utf8');
 const script = new Function('SpreadsheetApp', 'Utilities', 'Session',
-  source + '\n;return { budujInstrukcje, budujPracownikow, budujDostepnosc, removeEmptyDefaultSheet, freshSheet, ensureSize, columnLetter, nazwaMiesiaca };'
+  source + '\n;return { budujInstrukcje, budujPracownikow, budujDostepnosc, budujAdministratora, removeEmptyDefaultSheet, freshSheet, ensureSize, columnLetter, nazwaMiesiaca };'
 )(SpreadsheetApp, { formatDate: () => '2026-08' }, { getScriptTimeZone: () => 'Europe/Warsaw' });
 
 assert.equal(script.columnLetter(32), 'AF', 'the last day of a 31-day month sits in column AF');
@@ -142,10 +162,32 @@ const month = '2026-08';
 script.budujInstrukcje(script.freshSheet(spreadsheet, 'Instrukcja', 0), month);
 const workers = script.budujPracownikow(script.freshSheet(spreadsheet, 'Pracownicy', 1), month);
 script.budujDostepnosc(script.freshSheet(spreadsheet, 'Dostępność', 2), month, workers);
+script.budujAdministratora(script.freshSheet(spreadsheet, 'Administrator', 3), month, workers);
 script.removeEmptyDefaultSheet(spreadsheet);
 
-assert.deepEqual(spreadsheet.getSheets().map(sheet => sheet.getName()), ['Instrukcja', 'Pracownicy', 'Dostępność'],
-  'the empty default tab is removed');
+assert.deepEqual(spreadsheet.getSheets().map(sheet => sheet.getName()),
+  ['Instrukcja', 'Pracownicy', 'Dostępność', 'Administrator'], 'the empty default tab is removed');
+
+// The scheduler-only tab must be locked, not merely labelled.
+const admin = spreadsheet.getSheetByName('Administrator');
+assert.deepEqual([1, 2, 3, 4, 5].map(column => admin.cellValue(3, column)),
+  ['Imię i nazwisko', 'Kategorie', 'Uprawnienia kierownika', 'Kierownik domyślny', 'Uwagi']);
+assert.equal(admin.protections.length, 1, 'the whole Administrator tab is protected');
+assert.equal(admin.protections[0].editorsRemoved, true, 'other editors are removed, leaving the owner');
+assert.equal(admin.protections[0].domainEdit, false, 'domain-wide editing is switched off');
+assert.ok(admin.protections[0].description.length > 0);
+assert.equal(admin.validations.filter(entry => entry.validation.requirement === 'list').length, 2,
+  'Tak/Nie dropdowns live on the Administrator tab now');
+assert.equal(admin.frozenRows, 3);
+
+// Employees keep their four columns, and their headers are locked against renaming.
+const employeeSheet = spreadsheet.getSheetByName('Pracownicy');
+assert.equal(employeeSheet.cellValue(3, 4), 'Dyżur 24h');
+assert.equal(employeeSheet.cellValue(3, 5), undefined, 'the scheduler-only columns are gone from the employee tab');
+assert.equal(employeeSheet.protections.length, 0, 'the employee tab itself stays editable');
+assert.equal(employeeSheet.rangeProtections.length, 1, 'only its header rows are protected');
+assert.equal(employeeSheet.rangeProtections[0].rows, 3);
+assert.equal(spreadsheet.getSheetByName('Dostępność').rangeProtections.length, 1, 'the day header is protected too');
 
 const availability = spreadsheet.getSheetByName('Dostępność');
 assert.ok(availability.getMaxColumns() >= 33, 'the sheet is widened past the 26 columns a new sheet starts with');
@@ -167,10 +209,11 @@ assert.deepEqual(gridValidation.validation.choices, ['X', 'D', 'N']);
 
 const workerSheet = spreadsheet.getSheetByName('Pracownicy');
 assert.equal(workerSheet.cellValue(3, 1), 'Imię i nazwisko');
-assert.equal(workerSheet.cellValue(3, 8), 'Uwagi');
+assert.equal(workerSheet.cellValue(3, 1), 'Imię i nazwisko');
 assert.equal(workerSheet.frozenRows, 3);
 assert.ok(workerSheet.notes.get('3:2').includes('godzin'), 'header hints are attached as notes');
-assert.equal(workerSheet.validations.filter(entry => entry.validation.requirement === 'list').length, 4);
+assert.equal(workerSheet.validations.filter(entry => entry.validation.requirement === 'list').length, 2,
+  'the employee tab keeps only its own two dropdowns');
 
 // A 30-day month must not leave a stale 31st column behind.
 const shortMonth = makeSpreadsheet();
@@ -212,7 +255,9 @@ assert.equal(parsed.availability.length, 0, 'an empty grid yields no availabilit
 const filled = spreadsheet.getSheets().map(tableFrom);
 const grid = filled.find(table => table.name === 'Dostępność');
 const roster = filled.find(table => table.name === 'Pracownicy');
-roster.rows[3] = ['Anna Kowalska', 168, 'Noc', 'Dowolny', 'General', 'Tak', 'Tak', ''];
+roster.rows[3] = ['Anna Kowalska', 168, 'Noc', 'Dowolny'];
+const adminTable = filled.find(table => table.name === 'Administrator');
+adminTable.rows[3] = ['Anna Kowalska', 'General, Nursing', 'Tak', 'Tak', 'notatka kierownika'];
 grid.rows[4] = ['Anna Kowalska', 'X', '', 'N', ...Array(grid.rows[4].length - 4).fill('')];
 const withData = sheetIo.parseSheets(filled, {
   workers: [{ id: 'w1', name: 'Anna Kowalska', target: 160, preference: 'either', pair24: 'none', categories: ['General'], managerQualified: false, defaultManager: false }],
@@ -225,6 +270,12 @@ assert.equal(withData.workers.length, 1);
 assert.equal(withData.workers[0].workerId, 'w1');
 assert.equal(withData.workers[0].values.target, 168);
 assert.equal(withData.workers[0].values.pair24, 'any');
+// The two tabs describe one person, so they merge into a single imported row.
+assert.equal(withData.workers.length, 1, 'the employee tab and the Administrator tab merge by name');
+assert.deepEqual(withData.workers[0].values.categories, ['General', 'Nursing']);
+assert.equal(withData.workers[0].values.managerQualified, true);
+assert.equal(withData.workers[0].values.defaultManager, true);
+assert.deepEqual(withData.workers[0].sheets, ['Pracownicy', 'Administrator']);
 assert.deepEqual(withData.availability[0].entries, [
   { date: '2026-08-01', period: 'all' },
   { date: '2026-08-03', period: 'night' }

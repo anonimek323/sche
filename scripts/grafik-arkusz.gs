@@ -31,11 +31,16 @@ var WORKER_COLUMNS = [
   { label: 'Imię i nazwisko', width: 190, note: 'Tak samo jak w zakładce Dostępność — najlepiej wybierz siebie z listy.' },
   { label: 'Godziny docelowe', width: 110, note: 'Ile godzin chcesz przepracować w tym miesiącu. Liczba, np. 160.' },
   { label: 'Preferowana pora', width: 125, note: 'Dzień, Noc albo Bez preferencji.' },
-  { label: 'Dyżur 24h', width: 125, note: 'Czy bierzesz dyżury 24-godzinne i w jakim układzie.' },
-  { label: 'Kategorie', width: 150, note: 'Twoje kwalifikacje, po przecinku. Domyślnie: General.' },
-  { label: 'Uprawnienia kierownika', width: 140, note: 'Tak, jeśli możesz pełnić zmianę kierownika.' },
+  { label: 'Dyżur 24h', width: 125, note: 'Czy bierzesz dyżury 24-godzinne i w jakim układzie.' }
+];
+
+// Zakładka tylko dla osoby układającej grafik; chroniona przez protectSheet().
+var ADMIN_COLUMNS = [
+  { label: 'Imię i nazwisko', width: 190, note: 'Musi brzmieć tak samo jak w zakładce Pracownicy.' },
+  { label: 'Kategorie', width: 160, note: 'Kwalifikacje, po przecinku. Puste = General.' },
+  { label: 'Uprawnienia kierownika', width: 140, note: 'Tak, jeśli ta osoba może pełnić zmianę kierownika.' },
   { label: 'Kierownik domyślny', width: 130, note: 'Tak tylko dla jednej osoby w zespole.' },
-  { label: 'Uwagi', width: 220, note: 'Pole dowolne — program je pomija.' }
+  { label: 'Uwagi', width: 230, note: 'Notatki osoby układającej grafik — program je pomija.' }
 ];
 
 var PERIOD_CHOICES = ['Dzień', 'Noc', 'Bez preferencji'];
@@ -78,6 +83,7 @@ function utworzArkusze() {
   budujInstrukcje(freshSheet(spreadsheet, 'Instrukcja', 0), month);
   var workers = budujPracownikow(freshSheet(spreadsheet, 'Pracownicy', 1), month);
   budujDostepnosc(freshSheet(spreadsheet, 'Dostępność', 2), month, workers);
+  budujAdministratora(freshSheet(spreadsheet, 'Administrator', 3), month, workers);
   removeEmptyDefaultSheet(spreadsheet);
   spreadsheet.setActiveSheet(spreadsheet.getSheetByName('Instrukcja'));
   SpreadsheetApp.getUi().alert('Gotowe', 'Arkusz na ' + nazwaMiesiaca(month) + ' jest gotowy. Wyślij link zespołowi.', SpreadsheetApp.getUi().ButtonSet.OK);
@@ -153,6 +159,10 @@ function budujInstrukcje(sheet, month) {
     ['', 'W swoim wierszu zaznacz tylko te dni, w których NIE możesz pracować. Puste pole znaczy, że jesteś ' +
          'dostępny — przy dniach, w które możesz pracować, nie wpisuj niczego.', 'body'],
     ['', '', 'gap'],
+    ['', 'Zakładka „Administrator”', 'step'],
+    ['', 'Należy do osoby układającej grafik: kwalifikacje, uprawnienia kierownika i notatki. ' +
+         'Zakładka jest zablokowana — pracownicy ją widzą, ale nie mogą jej zmieniać.', 'body'],
+    ['', '', 'gap'],
     ['', 'Kody dostępności', 'head']
   ];
   CODES.forEach(function (entry) { rows.push([entry.code, entry.long, 'code']); });
@@ -199,7 +209,8 @@ function budujPracownikow(sheet, month) {
   ensureSize(sheet, last + 20, WORKER_COLUMNS.length);
 
   sheet.getRange(1, 1).setValue('Pracownicy').setFontSize(14).setFontWeight('bold').setFontColor(INK);
-  sheet.getRange(2, 1).setValue('Jeden wiersz na osobę · ' + nazwaMiesiaca(month)).setFontSize(10).setFontColor(MUTED);
+  sheet.getRange(2, 1).setValue('Jeden wiersz na osobę · ' + nazwaMiesiaca(month) + ' · wypełniają pracownicy')
+       .setFontSize(10).setFontColor(MUTED);
 
   var labels = WORKER_COLUMNS.map(function (column) { return column.label; });
   var header = sheet.getRange(WORKER_HEADER_ROW, 1, 1, labels.length);
@@ -218,15 +229,12 @@ function budujPracownikow(sheet, month) {
       .setVerticalAlignment('middle');
   sheet.getRange(WORKER_FIRST_ROW, 2, DEFAULT_ROWS, 1).setNumberFormat('0 "h"').setHorizontalAlignment('center');
   sheet.getRange(WORKER_FIRST_ROW, 3, DEFAULT_ROWS, 2).setHorizontalAlignment('center');
-  sheet.getRange(WORKER_FIRST_ROW, 6, DEFAULT_ROWS, 2).setHorizontalAlignment('center');
   for (var row = WORKER_FIRST_ROW + 1; row <= last; row += 2) {
     sheet.getRange(row, 1, 1, labels.length).setBackground(BAND);
   }
 
   listRule(sheet.getRange(WORKER_FIRST_ROW, 3, DEFAULT_ROWS, 1), PERIOD_CHOICES, 'Dzień, Noc albo Bez preferencji.');
   listRule(sheet.getRange(WORKER_FIRST_ROW, 4, DEFAULT_ROWS, 1), PAIR_CHOICES, 'Nie, Dowolny albo konkretny układ 24-godzinny.');
-  listRule(sheet.getRange(WORKER_FIRST_ROW, 6, DEFAULT_ROWS, 1), YES_NO, 'Tak albo Nie.');
-  listRule(sheet.getRange(WORKER_FIRST_ROW, 7, DEFAULT_ROWS, 1), YES_NO, 'Tak tylko dla jednej osoby w zespole.');
   sheet.getRange(WORKER_FIRST_ROW, 2, DEFAULT_ROWS, 1).setDataValidation(
     SpreadsheetApp.newDataValidation()
       .requireNumberBetween(0, 400)
@@ -235,7 +243,75 @@ function budujPracownikow(sheet, month) {
       .build());
 
   sheet.setFrozenRows(WORKER_HEADER_ROW);
+  protectHeaderRows(sheet, WORKER_HEADER_ROW, WORKER_COLUMNS.length, 'Nagłówki — nie zmieniać');
   return { first: WORKER_FIRST_ROW, last: last };
+}
+
+function budujAdministratora(sheet, month, workers) {
+  sheet.setTabColor(MUTED);
+  var last = WORKER_FIRST_ROW + DEFAULT_ROWS - 1;
+  ensureSize(sheet, last + 20, ADMIN_COLUMNS.length);
+
+  sheet.getRange(1, 1).setValue('Administrator').setFontSize(14).setFontWeight('bold').setFontColor(INK);
+  sheet.getRange(2, 1)
+       .setValue('Kwalifikacje i role kierownika · ' + nazwaMiesiaca(month) + ' · wypełnia osoba układająca grafik')
+       .setFontSize(10).setFontColor(MUTED);
+
+  var labels = ADMIN_COLUMNS.map(function (column) { return column.label; });
+  sheet.getRange(WORKER_HEADER_ROW, 1, 1, labels.length).setValues([labels])
+       .setBackground(INK).setFontColor('#FFFFFF').setFontWeight('bold')
+       .setHorizontalAlignment('center').setVerticalAlignment('middle').setWrap(true)
+       .setBorder(null, null, true, null, null, null, ACCENT, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+  sheet.setRowHeight(WORKER_HEADER_ROW, 34);
+  ADMIN_COLUMNS.forEach(function (column, index) {
+    sheet.setColumnWidth(index + 1, column.width);
+    sheet.getRange(WORKER_HEADER_ROW, index + 1).setNote(column.note);
+  });
+
+  sheet.getRange(WORKER_FIRST_ROW, 1, DEFAULT_ROWS, labels.length)
+       .setBorder(true, true, true, true, true, true, LINE, SpreadsheetApp.BorderStyle.SOLID)
+       .setVerticalAlignment('middle');
+  sheet.getRange(WORKER_FIRST_ROW, 3, DEFAULT_ROWS, 2).setHorizontalAlignment('center');
+  for (var row = WORKER_FIRST_ROW + 1; row <= last; row += 2) {
+    sheet.getRange(row, 1, 1, labels.length).setBackground(BAND);
+  }
+
+  listRule(sheet.getRange(WORKER_FIRST_ROW, 3, DEFAULT_ROWS, 1), YES_NO, 'Tak albo Nie.');
+  listRule(sheet.getRange(WORKER_FIRST_ROW, 4, DEFAULT_ROWS, 1), YES_NO, 'Tak tylko dla jednej osoby w zespole.');
+
+  // Nazwiska wybiera się z listy z „Pracowników”, żeby importer je dopasował.
+  var names = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Pracownicy')
+                .getRange(workers.first, 1, workers.last - workers.first + 1, 1);
+  sheet.getRange(WORKER_FIRST_ROW, 1, DEFAULT_ROWS, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation()
+      .requireValueInRange(names, true)
+      .setAllowInvalid(true)
+      .setHelpText('Wybierz osobę z zakładki Pracownicy.')
+      .build());
+
+  sheet.setFrozenRows(WORKER_HEADER_ROW);
+  protectSheet(sheet, 'Tylko osoba układająca grafik może to zmieniać');
+  return { first: WORKER_FIRST_ROW, last: last };
+}
+
+/**
+ * Prawdziwa blokada Arkuszy Google: po usunięciu pozostałych edytorów zakładkę
+ * może zmieniać wyłącznie właściciel arkusza, czyli osoba, która uruchomiła skrypt.
+ * Reszta zespołu ją widzi, ale dostaje odmowę przy próbie edycji.
+ */
+function protectSheet(sheet, description) {
+  var protection = sheet.protect().setDescription(description);
+  protection.removeEditors(protection.getEditors());
+  if (protection.canDomainEdit && protection.canDomainEdit()) protection.setDomainEdit(false);
+  return protection;
+}
+
+/** Nagłówki i tytuły: importer rozpoznaje po nich dane, więc nie powinny się zmieniać. */
+function protectHeaderRows(sheet, rows, columns, description) {
+  var protection = sheet.getRange(1, 1, rows, columns).protect().setDescription(description);
+  protection.removeEditors(protection.getEditors());
+  if (protection.canDomainEdit && protection.canDomainEdit()) protection.setDomainEdit(false);
+  return protection;
 }
 
 function listRule(range, choices, help) {
@@ -351,6 +427,7 @@ function budujDostepnosc(sheet, month, workers) {
 
   sheet.setFrozenRows(AVAILABILITY_HEADER_ROW);
   sheet.setFrozenColumns(1);
+  protectHeaderRows(sheet, AVAILABILITY_HEADER_ROW, totalColumn, 'Nagłówki i dni miesiąca — nie zmieniać');
 }
 
 function columnLetter(index) {

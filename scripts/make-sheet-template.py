@@ -57,17 +57,28 @@ WORKER_COLUMNS = [
     ('Godziny docelowe', 15, 'Ile godzin chcesz przepracować w tym miesiącu. Liczba, np. 160.'),
     ('Preferowana pora', 17, 'Dzień, Noc albo Bez preferencji.'),
     ('Dyżur 24h', 17, 'Czy bierzesz dyżury 24-godzinne i w jakim układzie.'),
-    ('Kategorie', 22, 'Twoje kwalifikacje, po przecinku. Domyślnie: General.'),
-    ('Uprawnienia kierownika', 19, 'Tak, jeśli możesz pełnić zmianę kierownika.'),
-    ('Kierownik domyślny', 17, 'Tak tylko dla jednej osoby w zespole.'),
-    ('Uwagi', 32, 'Pole dowolne — program je pomija.'),
+]
+
+# Zakładka tylko dla osoby układającej grafik — arkusz jest chroniony.
+ADMIN_COLUMNS = [
+    ('Imię i nazwisko', 28, 'Musi brzmieć tak samo jak w zakładce Pracownicy.'),
+    ('Kategorie', 24, 'Kwalifikacje, po przecinku. Puste = General.'),
+    ('Uprawnienia kierownika', 20, 'Tak, jeśli ta osoba może pełnić zmianę kierownika.'),
+    ('Kierownik domyślny', 18, 'Tak tylko dla jednej osoby w zespole.'),
+    ('Uwagi', 34, 'Notatki osoby układającej grafik — program je pomija.'),
 ]
 
 SAMPLE_WORKERS = [
-    ('Łukasz Zieliński', 160, 'Dzień', 'Nie', 'General', 'Tak', 'Tak', ''),
-    ('Agnieszka Wójcik', 152, 'Noc', 'Dowolny', 'General', 'Nie', 'Nie', 'Wolę bloki nocne.'),
-    ('Paweł Nowak', 168, 'Bez preferencji', '08:00 → 08:00', 'General', 'Tak', 'Nie', ''),
-    ('Maja Dąbrowska', 144, 'Dzień', 'Nie', 'General', 'Nie', 'Nie', 'Urlop w drugim tygodniu.'),
+    ('Łukasz Zieliński', 160, 'Dzień', 'Nie'),
+    ('Agnieszka Wójcik', 152, 'Noc', 'Dowolny'),
+    ('Paweł Nowak', 168, 'Bez preferencji', '08:00 → 08:00'),
+    ('Maja Dąbrowska', 144, 'Dzień', 'Nie'),
+]
+SAMPLE_ADMIN = [
+    ('Łukasz Zieliński', 'General', 'Tak', 'Tak', ''),
+    ('Agnieszka Wójcik', 'General', 'Nie', 'Nie', 'Wolę bloki nocne.'),
+    ('Paweł Nowak', 'General, Nursing', 'Tak', 'Nie', ''),
+    ('Maja Dąbrowska', 'General', 'Nie', 'Nie', 'Urlop w drugim tygodniu.'),
 ]
 # {imię: {dzień: kod}} — pokazuje pracownikom, jak wygląda wypełniony arkusz.
 SAMPLE_AVAILABILITY = {
@@ -159,6 +170,10 @@ def build_instructions(sheet, year, month):
         ('', 'W swoim wierszu zaznacz tylko te dni, w których NIE możesz pracować. Puste pole znaczy, '
              'że jesteś dostępny — przy dniach, w które możesz pracować, nie wpisuj niczego.', 'body'),
         ('', '', 'gap'),
+        ('', 'Zakładka „Administrator”', 'step'),
+        ('', 'Należy do osoby układającej grafik: kwalifikacje, uprawnienia kierownika i notatki. '
+             'Arkusz jest chroniony — pracownicy go nie zmieniają.', 'body'),
+        ('', '', 'gap'),
         ('', 'Kody dostępności', 'head'),
     ]
     for code, (_, _, _, description) in CODE_STYLES.items():
@@ -186,7 +201,7 @@ def build_workers(sheet, rows, year, month, sample=False):
     sheet.sheet_view.showGridLines = False
 
     sheet.cell(row=1, column=1, value='Pracownicy').font = title_font(15)
-    subtitle = sheet.cell(row=2, column=1, value='Jeden wiersz na osobę · %s' % month_name(year, month))
+    subtitle = sheet.cell(row=2, column=1, value='Jeden wiersz na osobę · %s · wypełniają pracownicy' % month_name(year, month))
     subtitle.font = muted_font(11)
 
     header_row, first = 3, 4
@@ -205,7 +220,7 @@ def build_workers(sheet, rows, year, month, sample=False):
         for column in range(1, len(WORKER_COLUMNS) + 1):
             cell = sheet.cell(row=row, column=column)
             cell.border = Border(bottom=THIN, right=THIN)
-            cell.alignment = Alignment(vertical='center', horizontal='left' if column in (1, 5, 8) else 'center')
+            cell.alignment = Alignment(vertical='center', horizontal='left' if column == 1 else 'center')
             cell.fill = fill(BAND if banded else PAPER)
             if column == 2:
                 cell.number_format = '0 "h"'
@@ -215,8 +230,6 @@ def build_workers(sheet, rows, year, month, sample=False):
     validations = [
         ('C', PERIOD_CHOICES, 'Preferowana pora', 'Wybierz: Dzień, Noc albo Bez preferencji.'),
         ('D', PAIR_CHOICES, 'Dyżur 24h', 'Nie, Dowolny albo konkretny układ 24-godzinny.'),
-        ('F', YES_NO, 'Uprawnienia kierownika', 'Tak albo Nie.'),
-        ('G', YES_NO, 'Kierownik domyślny', 'Tak tylko dla jednej osoby w zespole.'),
     ]
     for letter, choices, caption, prompt in validations:
         rule = DataValidation(type='list', formula1='"' + ','.join(choices) + '"', allow_blank=True,
@@ -239,6 +252,59 @@ def build_workers(sheet, rows, year, month, sample=False):
 
     sheet.freeze_panes = 'A%d' % first
     return first, last
+
+
+def build_administrator(sheet, rows, year, month, sample=False):
+    """Kwalifikacje i role kierownika — tylko dla osoby układającej grafik."""
+    sheet.sheet_properties.tabColor = MUTED
+    sheet.sheet_view.showGridLines = False
+
+    sheet.cell(row=1, column=1, value='Administrator').font = title_font(15)
+    subtitle = sheet.cell(row=2, column=1,
+                          value='Kwalifikacje i role kierownika · %s · wypełnia osoba układająca grafik' % month_name(year, month))
+    subtitle.font = muted_font(11)
+
+    header_row, first = 3, 4
+    last = first + rows - 1
+    for index, (label, width, hint) in enumerate(ADMIN_COLUMNS, start=1):
+        sheet.column_dimensions[get_column_letter(index)].width = width
+        header = sheet.cell(row=header_row, column=index, value=label)
+        paint_header(header)
+        header.comment = Comment(hint, 'Grafik', height=80, width=250)
+    sheet.row_dimensions[header_row].height = 32
+
+    for row in range(first, last + 1):
+        banded = (row - first) % 2 == 1
+        for column in range(1, len(ADMIN_COLUMNS) + 1):
+            cell = sheet.cell(row=row, column=column)
+            cell.border = Border(bottom=THIN, right=THIN)
+            cell.alignment = Alignment(vertical='center', horizontal='left' if column in (1, 2, 5) else 'center')
+            cell.fill = fill(BAND if banded else PAPER)
+        sheet.row_dimensions[row].height = 18
+
+    for letter in ('C', 'D'):
+        rule = DataValidation(type='list', formula1='"' + ','.join(YES_NO) + '"', allow_blank=True,
+                              showDropDown=False, errorTitle='Tak albo Nie', error='Wpisz Tak albo Nie.')
+        sheet.add_data_validation(rule)
+        rule.add('%s%d:%s%d' % (letter, first, letter, last))
+
+    names = DataValidation(type='list', formula1='=Pracownicy!$A$4:$A$%d' % last, allow_blank=True,
+                           showDropDown=False, promptTitle='Imię i nazwisko',
+                           prompt='Wybierz osobę z zakładki Pracownicy.')
+    sheet.add_data_validation(names)
+    names.add('A%d:A%d' % (first, last))
+
+    if sample:
+        for offset, values in enumerate(SAMPLE_ADMIN):
+            for column, value in enumerate(values, start=1):
+                if value != '':
+                    sheet.cell(row=first + offset, column=column).value = value
+
+    # Guardrail, nie zamek: w Excelu ochronę bez hasła zdejmuje się jednym kliknięciem,
+    # a prawdziwą blokadę daje dopiero scripts/grafik-arkusz.gs w Arkuszach Google.
+    sheet.protection.sheet = True
+    sheet.protection.enable()
+    sheet.freeze_panes = 'A%d' % first
 
 
 def build_availability(sheet, year, month, rows, worker_rows, sample=False):
@@ -366,6 +432,8 @@ def build_workbook(year, month, rows, sample=False):
     worker_rows = build_workers(workers, rows, year, month, sample)
     availability = workbook.create_sheet('Dostępność')
     build_availability(availability, year, month, rows, worker_rows, sample)
+    administrator = workbook.create_sheet('Administrator')
+    build_administrator(administrator, rows, year, month, sample)
     return workbook
 
 

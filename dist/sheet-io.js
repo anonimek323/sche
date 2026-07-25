@@ -37,6 +37,7 @@ var ShiftwiseSheetIO = (() => {
     restoreImportBackup: () => restoreImportBackup
   });
   var WORKER_SHEET_NAMES = ["pracownicy", "pracownik", "zespol", "obsada", "workers", "employees", "staff", "team"];
+  var ADMIN_SHEET_NAMES = ["administrator", "administracja", "admin", "kierownictwo", "ustawienia", "kwalifikacje"];
   var AVAILABILITY_SHEET_NAMES = ["dostepnosc", "dyspozycyjnosc", "availability", "absencje", "urlopy", "grafik"];
   var IGNORED_SHEET_NAMES = ["instrukcja", "instrukcje", "instructions", "legenda", "legend", "readme", "pomoc"];
   var HEADER_SYNONYMS = {
@@ -146,6 +147,7 @@ var ShiftwiseSheetIO = (() => {
     if (IGNORED_SHEET_NAMES.some((entry) => name.startsWith(entry))) return "ignored";
     if (AVAILABILITY_SHEET_NAMES.some((entry) => name.startsWith(entry))) return "availability";
     if (WORKER_SHEET_NAMES.some((entry) => name.startsWith(entry))) return "workers";
+    if (ADMIN_SHEET_NAMES.some((entry) => name.startsWith(entry))) return "workers";
     const rows = cellRows(table);
     for (const row of rows.slice(0, 10)) {
       if (!row.some((cell) => matchesSynonym(cellText(cell), "name"))) continue;
@@ -213,7 +215,7 @@ var ShiftwiseSheetIO = (() => {
     if (typeof value === "boolean") return value ? "Yes" : "No";
     return String(value ?? "");
   }
-  function parseWorkersTable(table, context, result) {
+  function parseWorkersTable(table, context, result, byName) {
     const rows = cellRows(table);
     const headerIndex = findHeaderRow(rows, (row) => row.some((cell) => matchesSynonym(cellText(cell), "name")));
     if (headerIndex < 0) {
@@ -290,11 +292,32 @@ var ShiftwiseSheetIO = (() => {
           }
         }
       }
+      const merged = byName.get(key);
+      if (merged) {
+        Object.assign(merged.values, values);
+        merged.changes = computeChanges(merged.values, context.workers.find((worker) => worker.id === merged.workerId), context);
+        if (!merged.sheets.includes(table.name)) merged.sheets.push(table.name);
+        continue;
+      }
       const match = matchWorker(name, context);
       if (match.matchedBy === "reordered") result.issues.push({ level: "warning", sheet: table.name, row: rowNumber, message: '"' + name + '" was matched to the existing worker "' + match.worker.name + '".' });
-      const changes = Object.entries(values).filter(([field, value]) => !match.worker || describeValue(field, value, context) !== describeValue(field, match.worker[field], context)).map(([field, value]) => ({ field, from: match.worker ? describeValue(field, match.worker[field], context) : "\u2014", to: describeValue(field, value, context) }));
-      result.workers.push({ sheet: table.name, row: rowNumber, name, workerId: match.worker?.id || null, isNew: !match.worker, matchedBy: match.matchedBy, values, changes });
+      const parsed = {
+        sheet: table.name,
+        sheets: [table.name],
+        row: rowNumber,
+        name,
+        workerId: match.worker?.id || null,
+        isNew: !match.worker,
+        matchedBy: match.matchedBy,
+        values,
+        changes: computeChanges(values, match.worker, context)
+      };
+      byName.set(key, parsed);
+      result.workers.push(parsed);
     }
+  }
+  function computeChanges(values, worker, context) {
+    return Object.entries(values).filter(([field, value]) => !worker || describeValue(field, value, context) !== describeValue(field, worker[field], context)).map(([field, value]) => ({ field, from: worker ? describeValue(field, worker[field], context) : "\u2014", to: describeValue(field, value, context) }));
   }
   function parseAvailabilityTable(table, context, result) {
     const rows = cellRows(table);
@@ -360,9 +383,10 @@ var ShiftwiseSheetIO = (() => {
       result.issues.push({ level: "error", sheet: tables.map((table) => table.name).join(", ") || "file", message: 'No "Pracownicy" or "Dost\u0119pno\u015B\u0107" tab was recognised in this file.' });
       return result;
     }
+    const workerIndex = /* @__PURE__ */ new Map();
     workerTables.forEach((entry) => {
       result.sheetsUsed.push({ name: entry.table.name, kind: "workers" });
-      parseWorkersTable(entry.table, context, result);
+      parseWorkersTable(entry.table, context, result, workerIndex);
     });
     const withImported = { ...context, workers: context.workers.concat(result.workers.filter((row) => row.isNew).map((row) => ({ id: "new:" + row.row, name: row.name }))) };
     availabilityTables.forEach((entry) => {
@@ -443,6 +467,7 @@ var ShiftwiseSheetIO = (() => {
       [],
       ["Krok 1 \u2014 zak\u0142adka \u201EPracownicy\u201D: uzupe\u0142nij sw\xF3j wiersz (godziny docelowe, preferowana pora, dy\u017Cury 24h)."],
       ["Krok 2 \u2014 zak\u0142adka \u201EDost\u0119pno\u015B\u0107\u201D: zaznacz dni, w kt\xF3rych NIE mo\u017Cesz pracowa\u0107. Puste pole = jestem dost\u0119pny."],
+      ["Zak\u0142adka \u201EAdministrator\u201D nale\u017Cy do osoby uk\u0142adaj\u0105cej grafik \u2014 pracownicy jej nie zmieniaj\u0105."],
       [],
       ["Legenda kod\xF3w dost\u0119pno\u015Bci"],
       ["X", "niedost\u0119pny przez ca\u0142y dzie\u0144 (np. urlop, L4)"],
@@ -453,12 +478,16 @@ var ShiftwiseSheetIO = (() => {
       ["Nie zmieniaj nazw zak\u0142adek ani nag\u0142\xF3wk\xF3w kolumn. Mo\u017Cesz dopisywa\u0107 wiersze na dole."],
       ["Gdy zesp\xF3\u0142 sko\u0144czy: Plik \u2192 Pobierz \u2192 Microsoft Excel (.xlsx), a potem w Shiftwise: Workers \u2192 Import from sheet."]
     ];
-    const workers = [["Imi\u0119 i nazwisko", "Godziny docelowe", "Preferowana pora", "Dy\u017Cur 24h", "Kategorie", "Uprawnienia kierownika", "Kierownik domy\u015Blny", "Uwagi"]];
+    const workers = [["Imi\u0119 i nazwisko", "Godziny docelowe", "Preferowana pora", "Dy\u017Cur 24h"]];
     app.workers.forEach((worker) => workers.push([
       worker.name,
       worker.target,
       { day: "Dzie\u0144", night: "Noc", either: "Bez preferencji" }[worker.preference] || "Bez preferencji",
-      pairName(worker),
+      pairName(worker)
+    ]));
+    const administrator = [["Imi\u0119 i nazwisko", "Kategorie", "Uprawnienia kierownika", "Kierownik domy\u015Blny", "Uwagi"]];
+    app.workers.forEach((worker) => administrator.push([
+      worker.name,
       worker.categories.join(", "),
       worker.managerQualified ? "Tak" : "Nie",
       worker.defaultManager ? "Tak" : "Nie",
@@ -480,7 +509,12 @@ var ShiftwiseSheetIO = (() => {
       });
       availability.push(row);
     });
-    return [{ name: "Instrukcja", rows: instructions }, { name: "Pracownicy", rows: workers }, { name: "Dost\u0119pno\u015B\u0107", rows: availability }];
+    return [
+      { name: "Instrukcja", rows: instructions },
+      { name: "Pracownicy", rows: workers },
+      { name: "Dost\u0119pno\u015B\u0107", rows: availability },
+      { name: "Administrator", rows: administrator }
+    ];
   }
   return __toCommonJS(sheet_io_exports);
 })();

@@ -5,6 +5,9 @@
 // both sides must be changed together.
 
 const WORKER_SHEET_NAMES = ['pracownicy', 'pracownik', 'zespol', 'obsada', 'workers', 'employees', 'staff', 'team'];
+// The scheduler-only tab: same shape as Pracownicy, so the same parser reads it and
+// the two are merged per person by name.
+const ADMIN_SHEET_NAMES = ['administrator', 'administracja', 'admin', 'kierownictwo', 'ustawienia', 'kwalifikacje'];
 const AVAILABILITY_SHEET_NAMES = ['dostepnosc', 'dyspozycyjnosc', 'availability', 'absencje', 'urlopy', 'grafik'];
 const IGNORED_SHEET_NAMES = ['instrukcja', 'instrukcje', 'instructions', 'legenda', 'legend', 'readme', 'pomoc'];
 
@@ -115,7 +118,7 @@ function findMonth(rows: unknown[][]): string | null {
 interface SheetTable { name: string; rows: unknown[][]; }
 interface SheetIssue { level: 'error' | 'warning'; sheet: string; row?: number; message: string; }
 interface ParsedWorkerRow {
-  sheet: string; row: number; name: string; workerId: string | null; isNew: boolean; matchedBy: 'exact' | 'reordered' | null;
+  sheet: string; sheets: string[]; row: number; name: string; workerId: string | null; isNew: boolean; matchedBy: 'exact' | 'reordered' | null;
   values: Partial<ScheduleWorker>; changes: { field: string; from: string; to: string }[];
 }
 interface ParsedAvailabilityRow {
@@ -136,6 +139,7 @@ function classifySheet(table: SheetTable): 'workers' | 'availability' | 'ignored
   if (IGNORED_SHEET_NAMES.some(entry => name.startsWith(entry))) return 'ignored';
   if (AVAILABILITY_SHEET_NAMES.some(entry => name.startsWith(entry))) return 'availability';
   if (WORKER_SHEET_NAMES.some(entry => name.startsWith(entry))) return 'workers';
+  if (ADMIN_SHEET_NAMES.some(entry => name.startsWith(entry))) return 'workers';
   const rows = cellRows(table);
   // A CSV export carries one unnamed tab, so fall back to the shape of the header row.
   for (const row of rows.slice(0, 10)) {
@@ -207,7 +211,7 @@ function describeValue(field: string, value: unknown, context: SheetImportContex
   return String(value ?? '');
 }
 
-function parseWorkersTable(table: SheetTable, context: SheetImportContext, result: SheetImportResult): void {
+function parseWorkersTable(table: SheetTable, context: SheetImportContext, result: SheetImportResult, byName: Map<string, ParsedWorkerRow>): void {
   const rows = cellRows(table);
   const headerIndex = findHeaderRow(rows, row => row.some(cell => matchesSynonym(cellText(cell), 'name')));
   if (headerIndex < 0) { result.issues.push({ level: 'error', sheet: table.name, message: 'No header row with a name column was found, so this tab was skipped.' }); return; }
@@ -260,12 +264,31 @@ function parseWorkersTable(table: SheetTable, context: SheetImportContext, resul
       if (value === true && defaultManagerRow) result.issues.push({ level: 'warning', sheet: table.name, row: rowNumber, message: 'Row ' + defaultManagerRow + ' is already the default manager, so ' + name + ' was imported as manager-qualified only.' });
       else if (value !== null) { values.defaultManager = value; if (value) { defaultManagerRow = rowNumber; values.managerQualified = true; } }
     }
+    // The same person is described by the employee tab and the scheduler-only tab,
+    // so their rows are merged rather than imported twice.
+    const merged = byName.get(key);
+    if (merged) {
+      Object.assign(merged.values, values);
+      merged.changes = computeChanges(merged.values, context.workers.find(worker => worker.id === merged.workerId), context);
+      if (!merged.sheets.includes(table.name)) merged.sheets.push(table.name);
+      continue;
+    }
     const match = matchWorker(name, context);
     if (match.matchedBy === 'reordered') result.issues.push({ level: 'warning', sheet: table.name, row: rowNumber, message: '"' + name + '" was matched to the existing worker "' + match.worker.name + '".' });
-    const changes = Object.entries(values).filter(([field, value]) => !match.worker || describeValue(field, value, context) !== describeValue(field, match.worker[field], context))
-      .map(([field, value]) => ({ field, from: match.worker ? describeValue(field, match.worker[field], context) : '—', to: describeValue(field, value, context) }));
-    result.workers.push({ sheet: table.name, row: rowNumber, name, workerId: match.worker?.id || null, isNew: !match.worker, matchedBy: match.matchedBy, values, changes });
+    const parsed: ParsedWorkerRow = {
+      sheet: table.name, sheets: [table.name], row: rowNumber, name,
+      workerId: match.worker?.id || null, isNew: !match.worker, matchedBy: match.matchedBy,
+      values, changes: computeChanges(values, match.worker, context)
+    };
+    byName.set(key, parsed);
+    result.workers.push(parsed);
   }
+}
+
+function computeChanges(values: Partial<ScheduleWorker>, worker: ScheduleWorker | undefined, context: SheetImportContext): { field: string; from: string; to: string }[] {
+  return Object.entries(values)
+    .filter(([field, value]) => !worker || describeValue(field, value, context) !== describeValue(field, worker[field], context))
+    .map(([field, value]) => ({ field, from: worker ? describeValue(field, worker[field], context) : '—', to: describeValue(field, value, context) }));
 }
 
 function parseAvailabilityTable(table: SheetTable, context: SheetImportContext, result: SheetImportResult): void {
@@ -317,7 +340,8 @@ function parseSheets(tables: SheetTable[], context: SheetImportContext): SheetIm
     result.issues.push({ level: 'error', sheet: tables.map(table => table.name).join(', ') || 'file', message: 'No "Pracownicy" or "Dostępność" tab was recognised in this file.' });
     return result;
   }
-  workerTables.forEach(entry => { result.sheetsUsed.push({ name: entry.table.name, kind: 'workers' }); parseWorkersTable(entry.table, context, result); });
+  const workerIndex = new Map<string, ParsedWorkerRow>();
+  workerTables.forEach(entry => { result.sheetsUsed.push({ name: entry.table.name, kind: 'workers' }); parseWorkersTable(entry.table, context, result, workerIndex); });
   const withImported: SheetImportContext = { ...context, workers: context.workers.concat(result.workers.filter(row => row.isNew).map(row => ({ id: 'new:' + row.row, name: row.name } as ScheduleWorker))) };
   availabilityTables.forEach(entry => { result.sheetsUsed.push({ name: entry.table.name, kind: 'availability' }); parseAvailabilityTable(entry.table, withImported, result); });
   result.availability.forEach(row => { if (row.workerId?.startsWith('new:')) { row.workerId = null; row.isNew = true; } });
@@ -388,6 +412,7 @@ function buildTemplateTables(app: AppState, month: string): SheetTable[] {
     [],
     ['Krok 1 — zakładka „Pracownicy”: uzupełnij swój wiersz (godziny docelowe, preferowana pora, dyżury 24h).'],
     ['Krok 2 — zakładka „Dostępność”: zaznacz dni, w których NIE możesz pracować. Puste pole = jestem dostępny.'],
+    ['Zakładka „Administrator” należy do osoby układającej grafik — pracownicy jej nie zmieniają.'],
     [],
     ['Legenda kodów dostępności'],
     ['X', 'niedostępny przez cały dzień (np. urlop, L4)'],
@@ -398,11 +423,17 @@ function buildTemplateTables(app: AppState, month: string): SheetTable[] {
     ['Nie zmieniaj nazw zakładek ani nagłówków kolumn. Możesz dopisywać wiersze na dole.'],
     ['Gdy zespół skończy: Plik → Pobierz → Microsoft Excel (.xlsx), a potem w Shiftwise: Workers → Import from sheet.']
   ];
-  const workers: unknown[][] = [['Imię i nazwisko', 'Godziny docelowe', 'Preferowana pora', 'Dyżur 24h', 'Kategorie', 'Uprawnienia kierownika', 'Kierownik domyślny', 'Uwagi']];
+  // Employees own this tab.
+  const workers: unknown[][] = [['Imię i nazwisko', 'Godziny docelowe', 'Preferowana pora', 'Dyżur 24h']];
   app.workers.forEach(worker => workers.push([
     worker.name, worker.target,
     { day: 'Dzień', night: 'Noc', either: 'Bez preferencji' }[worker.preference] || 'Bez preferencji',
-    pairName(worker), worker.categories.join(', '),
+    pairName(worker)
+  ]));
+  // The scheduler owns this one; it is protected in the generated workbook.
+  const administrator: unknown[][] = [['Imię i nazwisko', 'Kategorie', 'Uprawnienia kierownika', 'Kierownik domyślny', 'Uwagi']];
+  app.workers.forEach(worker => administrator.push([
+    worker.name, worker.categories.join(', '),
     worker.managerQualified ? 'Tak' : 'Nie', worker.defaultManager ? 'Tak' : 'Nie', ''
   ]));
   const days = Array.from({ length: total }, (_, offset) => offset + 1);
@@ -421,7 +452,12 @@ function buildTemplateTables(app: AppState, month: string): SheetTable[] {
     });
     availability.push(row);
   });
-  return [{ name: 'Instrukcja', rows: instructions }, { name: 'Pracownicy', rows: workers }, { name: 'Dostępność', rows: availability }];
+  return [
+    { name: 'Instrukcja', rows: instructions },
+    { name: 'Pracownicy', rows: workers },
+    { name: 'Dostępność', rows: availability },
+    { name: 'Administrator', rows: administrator }
+  ];
 }
 
 export {

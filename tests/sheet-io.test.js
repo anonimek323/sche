@@ -20,13 +20,24 @@ const context = () => ({
 const workerTable = () => ({
   name: 'Pracownicy',
   rows: [
-    ['Imię i nazwisko', 'Godziny docelowe', 'Preferowana pora', 'Dyżur 24h', 'Kategorie', 'Uprawnienia kierownika', 'Kierownik domyślny', 'Uwagi'],
-    ['Dokładnie tak samo jak w zakładce Dostępność.', 'Ile godzin chcesz przepracować.', 'Dzień, Noc albo Bez preferencji.', '', '', '', '', ''],
-    ['Lukasz Zielinski', '168', 'Noc', 'Dowolny', 'General', 'Tak', 'Tak', 'bez ogonków'],
-    ['Wójcik Agnieszka', '150', 'Dzień', '08:00 → 08:00', 'General, Nursing', 'Nie', 'Nie', 'odwrócona kolejność'],
-    ['Paweł Nowak', '144', 'Bez preferencji', 'Nie', 'General', 'Nie', 'Nie', 'nowa osoba'],
+    ['Imię i nazwisko', 'Godziny docelowe', 'Preferowana pora', 'Dyżur 24h'],
+    ['Dokładnie tak samo jak w zakładce Dostępność.', 'Ile godzin chcesz przepracować.', 'Dzień, Noc albo Bez preferencji.', ''],
+    ['Lukasz Zielinski', '168', 'Noc', 'Dowolny'],
+    ['Wójcik Agnieszka', '150', 'Dzień', '08:00 → 08:00'],
+    ['Paweł Nowak', '144', 'Bez preferencji', 'Nie'],
     [],
-    ['Maja Dąbrowska', 'sto', 'wieczorem', 'Nie', '', '', '', 'złe wartości']
+    ['Maja Dąbrowska', 'sto', 'wieczorem', 'Nie']
+  ]
+});
+
+// The scheduler-only tab, merged into the same people by name.
+const adminTable = () => ({
+  name: 'Administrator',
+  rows: [
+    ['Imię i nazwisko', 'Kategorie', 'Uprawnienia kierownika', 'Kierownik domyślny', 'Uwagi'],
+    ['Lukasz Zielinski', 'General', 'Tak', 'Tak', 'bez ogonków'],
+    ['Wójcik Agnieszka', 'General, Nursing', 'Nie', 'Nie', 'odwrócona kolejność'],
+    ['Paweł Nowak', 'General', 'Nie', 'Nie', 'nowa osoba']
   ]
 });
 
@@ -73,12 +84,13 @@ assert.equal(sheetIo.daysInMonth('2026-02'), 28);
 
 // Tab recognition, including a single-tab CSV export
 assert.equal(sheetIo.classifySheet(workerTable()), 'workers');
+assert.equal(sheetIo.classifySheet(adminTable()), 'workers', 'the Administrator tab is read by the same parser');
 assert.equal(sheetIo.classifySheet(availabilityTable()), 'availability');
 assert.equal(sheetIo.classifySheet({ name: 'Instrukcja', rows: [['cokolwiek']] }), 'ignored');
 assert.equal(sheetIo.classifySheet({ ...workerTable(), name: 'Arkusz1' }), 'workers', 'a renamed tab is recognised by its header row');
 assert.equal(sheetIo.classifySheet({ ...availabilityTable(), name: 'export' }), 'availability', 'a renamed grid is recognised by its day columns');
 
-const parsed = sheetIo.parseSheets([workerTable(), availabilityTable()], context());
+const parsed = sheetIo.parseSheets([workerTable(), adminTable(), availabilityTable()], context());
 assert.equal(parsed.month, '2026-08');
 assert.equal(parsed.monthFromSheet, true);
 assert.equal(parsed.issues.filter(issue => issue.level === 'error').length, 0);
@@ -91,7 +103,10 @@ assert.equal(byName('Lukasz Zielinski').values.preference, 'night');
 assert.equal(byName('Lukasz Zielinski').values.pair24, 'any');
 assert.equal(byName('Lukasz Zielinski').values.defaultManager, true);
 assert.equal(byName('Wójcik Agnieszka').workerId, 'w2', 'a reordered name still matches');
-assert.deepEqual(byName('Wójcik Agnieszka').values.categories, ['General', 'Nursing']);
+assert.deepEqual(byName('Wójcik Agnieszka').values.categories, ['General', 'Nursing'], 'categories come from the Administrator tab');
+assert.deepEqual(byName('Lukasz Zielinski').sheets, ['Pracownicy', 'Administrator'], 'both tabs describe the same person');
+assert.equal(parsed.workers.length, 4, 'the two tabs merge instead of importing everyone twice');
+assert.equal(byName('Maja Dąbrowska').values.managerQualified, undefined, 'somebody missing from the Administrator tab keeps their settings');
 assert.equal(byName('Paweł Nowak').isNew, true);
 assert.equal(byName('Maja Dąbrowska').values.target, undefined, 'unusable hours are left to the existing value');
 assert.equal(byName('Maja Dąbrowska').values.preference, undefined);
@@ -176,7 +191,11 @@ const exportApp = {
   categories: ['General'], pairings: context().pairings, current: '2026-08'
 };
 const exported = sheetIo.buildTemplateTables(exportApp, '2026-08');
-assert.deepEqual(exported.map(table => table.name), ['Instrukcja', 'Pracownicy', 'Dostępność']);
+assert.deepEqual(exported.map(table => table.name), ['Instrukcja', 'Pracownicy', 'Dostępność', 'Administrator']);
+assert.deepEqual(exported[1].rows[0], ['Imię i nazwisko', 'Godziny docelowe', 'Preferowana pora', 'Dyżur 24h'],
+  'employees only see their own four columns');
+assert.deepEqual(exported[3].rows[0], ['Imię i nazwisko', 'Kategorie', 'Uprawnienia kierownika', 'Kierownik domyślny', 'Uwagi']);
+assert.equal(exported[3].rows[1][2], 'Tak', 'manager-qualified is exported to the Administrator tab');
 const reimported = sheetIo.parseSheets(exported, { ...context(), workers: [] });
 assert.equal(reimported.issues.filter(issue => issue.level === 'error').length, 0);
 assert.equal(reimported.month, '2026-08');
@@ -184,6 +203,9 @@ assert.equal(reimported.workers[0].values.target, 168);
 assert.equal(reimported.workers[0].values.preference, 'night');
 assert.equal(reimported.workers[0].values.pair24, 'pair20');
 assert.equal(reimported.workers[0].values.defaultManager, true);
+assert.equal(reimported.workers.length, 1, 'the exported workbook re-imports as one person, not two');
+assert.deepEqual(reimported.workers[0].values.categories, ['General']);
+assert.equal(reimported.workers[0].values.managerQualified, true);
 assert.deepEqual(reimported.availability[0].entries, [{ date: '2026-08-14', period: 'day' }]);
 
 // A file that is not the expected workbook fails loudly instead of silently
