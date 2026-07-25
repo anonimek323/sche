@@ -80,6 +80,45 @@ SAMPLE_ADMIN = [
     ('Paweł Nowak', 'General, Nursing', 'Tak', 'Nie', ''),
     ('Maja Dąbrowska', 'General', 'Nie', 'Nie', 'Urlop w drugim tygodniu.'),
 ]
+# --demo: pełny, realistyczny zespół do testów. Sierpień 2026 zaczyna się w sobotę,
+# więc weekendy to 1, 2, 8, 9, 15, 16, 22, 23, 29, 30.
+DEMO_WORKERS = [
+    ('Anna Kowalska', 168, 'Dzień', 'Nie'),
+    ('Piotr Nowak', 160, 'Noc', 'Dowolny'),
+    ('Katarzyna Wiśniewska', 152, 'Dzień', 'Nie'),
+    ('Tomasz Lewandowski', 168, 'Bez preferencji', '08:00 → 08:00'),
+    ('Magdalena Dąbrowska', 144, 'Dzień', 'Nie'),
+    ('Jakub Zieliński', 160, 'Noc', 'Dowolny'),
+    ('Agnieszka Wójcik', 120, 'Dzień', 'Nie'),
+    ('Marcin Kamiński', 160, 'Bez preferencji', '20:00 → 20:00'),
+    ('Ewa Szymańska', 152, 'Noc', 'Dowolny'),
+    ('Rafał Woźniak', 144, 'Dzień', 'Nie'),
+]
+DEMO_ADMIN = [
+    ('Anna Kowalska', 'General', 'Tak', 'Tak', 'Kierowniczka zmiany, pierwszy wybór.'),
+    ('Piotr Nowak', 'General', 'Tak', 'Nie', 'Zastępstwo kierownika.'),
+    ('Katarzyna Wiśniewska', 'General, Nursing', 'Nie', 'Nie', ''),
+    ('Tomasz Lewandowski', 'General', 'Tak', 'Nie', 'Zastępstwo kierownika.'),
+    ('Magdalena Dąbrowska', 'General', 'Nie', 'Nie', 'Studia zaoczne w środy do 14:00.'),
+    ('Jakub Zieliński', 'General', 'Nie', 'Nie', ''),
+    ('Agnieszka Wójcik', 'General', 'Nie', 'Nie', 'Umowa na 3/4 etatu.'),
+    ('Marcin Kamiński', 'General', 'Tak', 'Nie', 'Zastępstwo kierownika.'),
+    ('Ewa Szymańska', 'General, Nursing', 'Nie', 'Nie', ''),
+    ('Rafał Woźniak', 'General', 'Nie', 'Nie', ''),
+]
+DEMO_AVAILABILITY = {
+    'Anna Kowalska': dict.fromkeys([24, 25, 26, 27, 28], 'X'),                      # urlop
+    'Piotr Nowak': {10: 'X', 11: 'X', 15: 'N', 16: 'N'},                            # L4, potem bez nocek
+    'Katarzyna Wiśniewska': {1: 'N', 2: 'N', 8: 'N', 9: 'N', 19: 'X'},              # bez nocek w weekendy
+    'Tomasz Lewandowski': {3: 'X', 4: 'X'},                                         # szkolenie
+    'Magdalena Dąbrowska': {5: 'D', 12: 'D', 19: 'D', 26: 'D', 30: 'X'},            # środy na uczelni
+    'Jakub Zieliński': {14: 'X', 15: 'X', 16: 'X', 21: 'N'},                        # wesele
+    'Agnieszka Wójcik': dict.fromkeys([1, 2, 15, 16, 29, 30], 'X'),                 # co drugi weekend wolny
+    'Marcin Kamiński': {6: 'X', 7: 'X'},
+    'Ewa Szymańska': {2: 'D', 9: 'D', 16: 'D', 23: 'D', 30: 'D', 25: 'X'},          # niedziele tylko na noc
+    'Rafał Woźniak': dict.fromkeys([17, 18, 19, 20, 21], 'X'),                      # urlop
+}
+
 # {imię: {dzień: kod}} — pokazuje pracownikom, jak wygląda wypełniony arkusz.
 SAMPLE_AVAILABILITY = {
     'Łukasz Zieliński': {3: 'N', 4: 'N', 17: 'X'},
@@ -196,7 +235,7 @@ def build_instructions(sheet, year, month):
         write(index, code, text, style)
 
 
-def build_workers(sheet, rows, year, month, sample=False):
+def build_workers(sheet, rows, year, month, filled=None):
     sheet.sheet_properties.tabColor = INK
     sheet.sheet_view.showGridLines = False
 
@@ -244,8 +283,8 @@ def build_workers(sheet, rows, year, month, sample=False):
     sheet.add_data_validation(hours)
     hours.add('B%d:B%d' % (first, last))
 
-    if sample:
-        for offset, values in enumerate(SAMPLE_WORKERS):
+    if filled:
+        for offset, values in enumerate(filled['workers']):
             for column, value in enumerate(values, start=1):
                 if value != '':
                     sheet.cell(row=first + offset, column=column).value = value
@@ -254,7 +293,7 @@ def build_workers(sheet, rows, year, month, sample=False):
     return first, last
 
 
-def build_administrator(sheet, rows, year, month, sample=False):
+def build_administrator(sheet, rows, year, month, filled=None):
     """Kwalifikacje i role kierownika — tylko dla osoby układającej grafik."""
     sheet.sheet_properties.tabColor = MUTED
     sheet.sheet_view.showGridLines = False
@@ -294,8 +333,8 @@ def build_administrator(sheet, rows, year, month, sample=False):
     sheet.add_data_validation(names)
     names.add('A%d:A%d' % (first, last))
 
-    if sample:
-        for offset, values in enumerate(SAMPLE_ADMIN):
+    if filled:
+        for offset, values in enumerate(filled['admin']):
             for column, value in enumerate(values, start=1):
                 if value != '':
                     sheet.cell(row=first + offset, column=column).value = value
@@ -307,7 +346,7 @@ def build_administrator(sheet, rows, year, month, sample=False):
     sheet.freeze_panes = 'A%d' % first
 
 
-def build_availability(sheet, year, month, rows, worker_rows, sample=False):
+def build_availability(sheet, year, month, rows, worker_rows, filled=None):
     sheet.sheet_properties.tabColor = ACCENT
     sheet.sheet_view.showGridLines = False
     days = calendar.monthrange(year, month)[1]
@@ -410,8 +449,8 @@ def build_availability(sheet, year, month, rows, worker_rows, sample=False):
             operator='equal', formula=['"%s"' % code],
             fill=fill(background), font=Font(bold=True, color=ink)))
 
-    if sample:
-        for offset, (name, marks) in enumerate(SAMPLE_AVAILABILITY.items()):
+    if filled:
+        for offset, (name, marks) in enumerate(filled['availability'].items()):
             sheet.cell(row=first + offset, column=1).value = name
             for day, code in marks.items():
                 if day <= days:
@@ -423,17 +462,21 @@ def build_availability(sheet, year, month, rows, worker_rows, sample=False):
     sheet.sheet_properties.pageSetUpPr.fitToPage = True
 
 
-def build_workbook(year, month, rows, sample=False):
+SAMPLE_DATA = {'workers': SAMPLE_WORKERS, 'admin': SAMPLE_ADMIN, 'availability': SAMPLE_AVAILABILITY}
+DEMO_DATA = {'workers': DEMO_WORKERS, 'admin': DEMO_ADMIN, 'availability': DEMO_AVAILABILITY}
+
+
+def build_workbook(year, month, rows, filled=None):
     workbook = Workbook()
     instructions = workbook.active
     instructions.title = 'Instrukcja'
     build_instructions(instructions, year, month)
     workers = workbook.create_sheet('Pracownicy')
-    worker_rows = build_workers(workers, rows, year, month, sample)
+    worker_rows = build_workers(workers, rows, year, month, filled)
     availability = workbook.create_sheet('Dostępność')
-    build_availability(availability, year, month, rows, worker_rows, sample)
+    build_availability(availability, year, month, rows, worker_rows, filled)
     administrator = workbook.create_sheet('Administrator')
-    build_administrator(administrator, rows, year, month, sample)
+    build_administrator(administrator, rows, year, month, filled)
     return workbook
 
 
@@ -448,14 +491,18 @@ def main():
                         help='Miesiąc arkusza w formacie RRRR-MM (domyślnie następny miesiąc).')
     parser.add_argument('--rows', type=int, default=30, help='Liczba wierszy pracowników.')
     parser.add_argument('--out', default=None, help='Ścieżka pliku wyjściowego .xlsx.')
-    parser.add_argument('--sample', action='store_true', help='Wypełnij arkusz przykładowymi danymi.')
+    parser.add_argument('--sample', action='store_true', help='Wypełnij arkusz krótkim przykładem (4 osoby).')
+    parser.add_argument('--demo', action='store_true',
+                        help='Wypełnij arkusz realistycznym zespołem 10 osób do testów.')
     options = parser.parse_args()
 
     year, month = (int(part) for part in options.month.split('-'))
-    suffix = '-przyklad' if options.sample else ''
+    filled = DEMO_DATA if options.demo else (SAMPLE_DATA if options.sample else None)
+    suffix = '-testowy' if options.demo else ('-przyklad' if options.sample else '')
+    rows = max(options.rows, len(filled['workers']) if filled else 0)
     output = options.out or os.path.join('templates', 'Grafik-dane-%04d-%02d%s.xlsx' % (year, month, suffix))
     os.makedirs(os.path.dirname(output) or '.', exist_ok=True)
-    build_workbook(year, month, options.rows, options.sample).save(output)
+    build_workbook(year, month, rows, filled).save(output)
     print('Zapisano %s' % output)
 
 

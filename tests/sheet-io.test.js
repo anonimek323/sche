@@ -184,6 +184,28 @@ assert.equal(fromFile.availability.length, 4);
 assert.equal(fromFile.availability.find(row => row.name === 'Maja Dąbrowska').entries.length, 5);
 assert.deepEqual(fromFile.availability.find(row => row.name === 'Paweł Nowak').entries, [{ date: '2026-08-12', period: 'all' }]);
 
+// The realistic ten-person test workbook: the dataset a demo is judged on, so it is
+// checked to stay complete and importable.
+const demoBook = XLSX.readFile(path.join(__dirname, '..', 'templates', 'Grafik-dane-2026-08-testowy.xlsx'));
+const demoTables = demoBook.SheetNames.map(name => ({ name, rows: XLSX.utils.sheet_to_json(demoBook.Sheets[name], { header: 1, raw: true, defval: '' }) }));
+const demo = sheetIo.parseSheets(demoTables, { ...context(), workers: [] });
+assert.deepEqual(demoBook.SheetNames, ['Instrukcja', 'Pracownicy', 'Dostępność', 'Administrator']);
+assert.equal(demo.issues.length, 0, 'the test workbook imports without a single warning: ' + JSON.stringify(demo.issues));
+assert.equal(demo.month, '2026-08');
+assert.equal(demo.workers.length, 10, 'a full team');
+assert.equal(demo.availability.length, 10, 'everybody recorded something');
+assert.equal(demo.availability.reduce((total, row) => total + row.entries.length, 0), 44);
+assert.equal(demo.workers.filter(row => row.values.managerQualified).length, 4, 'four people can run a manager shift');
+assert.equal(demo.workers.filter(row => row.values.defaultManager).length, 1, 'exactly one default manager');
+assert.equal(demo.workers.filter(row => row.values.preference === 'night').length, 3);
+assert.equal(demo.workers.filter(row => row.values.pair24 !== 'none').length, 5, 'three take any 24h pattern, two a specific one');
+assert.equal(demo.workers.filter(row => row.values.pair24 === 'any').length, 3);
+assert.ok(demo.workers.every(row => row.values.target >= 120 && row.values.target <= 168), 'targets look like real contracts');
+assert.deepEqual(demo.newCategories, ['Nursing']);
+const marked = demo.availability.flatMap(row => row.entries.map(entry => entry.period));
+assert.ok(marked.filter(period => period === 'all').length > 20, 'holidays and sick days dominate');
+assert.ok(marked.includes('day') && marked.includes('night'), 'part-day restrictions appear too');
+
 // A round trip through the in-app template export
 const exportApp = {
   workers: [{ id: 'w1', name: 'Łukasz Zieliński', target: 168, preference: 'night', pair24: 'pair20', categories: ['General'], managerQualified: true, defaultManager: true }],

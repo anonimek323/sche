@@ -61,8 +61,16 @@ shading and a running `Razem` count per person. Regenerate them for another mont
 
 ```sh
 python3 scripts/make-sheet-template.py --month 2026-09          # blank
-python3 scripts/make-sheet-template.py --month 2026-09 --sample # filled-in example
+python3 scripts/make-sheet-template.py --month 2026-09 --sample # short example, 4 people
+python3 scripts/make-sheet-template.py --month 2026-08 --demo   # full test team, 10 people
 ```
+
+`--demo` writes `templates/Grafik-dane-2026-08-testowy.xlsx`: a ten-person team with contracts from
+120h to 168h, mixed day/night preferences, five people taking 24h duties, four manager-qualified with
+one default, and 44 realistic unavailability entries — two week-long holidays, sick days, a wedding,
+Wednesday-morning classes, alternating weekends off. It is deliberately feasible: importing it and
+generating August 2026 fills all 139 shifts at the exact optimum, leaving everybody 20h under target,
+which is the fairest split of the 200h the team over-requested.
 
 ### Building the sheet natively instead of importing a file
 
